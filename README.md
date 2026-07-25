@@ -69,12 +69,12 @@ docker run -d \
   -e API_ADMIN_PASSWORD= \
   -e API_PORT=8080 \
   -p 8080:8080 \
-  th0rn0/lanops-spotify-jukebox:service-latest
+  lanopsdev/lanops-spotify-jukebox:service-latest
 ```
 
 ```
   stream-proxy:
-    image: th0rn0/lanops-stream-proxy:latest
+    image: lanopsdev/lanops-stream-proxy:latest
     container_name: stream-proxy
     restart: unless-stopped
     environment:

@@ -132,7 +132,7 @@ steps:
   - name: build-push
     image: plugins/docker
     settings:
-      repo: th0rn0/lanops-stream-proxy
+      repo: lanopsdev/lanops-stream-proxy
       dockerfile: resources/docker/Dockerfile
       username:
         from_secret: dockerhub_username
