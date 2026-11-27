@@ -146,9 +146,10 @@ func TestHandleGetStreamByName_Found(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	// Handler returns StatusFound (302)
-	if w.Code != http.StatusFound {
-		t.Errorf("expected 302, got %d", w.Code)
+	// 200, not 302. A redirect with no Location header sends fetch/XHR
+	// clients looking for a target that does not exist.
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
 	}
 
 	var stream dbstreams.Stream

@@ -76,6 +76,7 @@ func handleGetStreams(c *gin.Context) {
 	streams, err := dbStreamsClient.GetStreams()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Error with Database")
+		return
 	}
 	c.JSON(http.StatusOK, streams)
 }
@@ -91,7 +92,7 @@ func handleGetStreamByName(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, "Something went wrong")
 		return
 	}
-	c.JSON(http.StatusFound, dbStream)
+	c.JSON(http.StatusOK, dbStream)
 }
 
 func handleEnableStreamByName(c *gin.Context) {

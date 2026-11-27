@@ -11,10 +11,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/andreykaipov/goobs"
 	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+)
+
+const (
+	streamSyncInterval = 7 * time.Second
+	rotationInterval   = 30 * time.Second
+	obsRetryInterval   = 5 * time.Second
 )
 
 var (
@@ -32,6 +37,13 @@ func main() {
 	).Level(zerolog.TraceLevel).With().Timestamp().Caller().Logger()
 	logger.Info().Msg("Initializing Stream Proxy")
 
+	// Start draining the message channel before anything can write to it.
+	go func() {
+		for msg := range msgCh {
+			logger.Info().Msg(msg.Message)
+		}
+	}()
+
 	logger.Info().Msg("Loading Config")
 	cfg = config.Load()
 
@@ -41,11 +53,6 @@ func main() {
 	}
 	if err := db.AutoMigrate(dbstreams.Stream{}); err != nil {
 		logger.Fatal().Err(err).Msg("Failed to migrate DB")
-	}
-
-	goobsClient, err := goobs.New(cfg.ObsWebSocketAddress, goobs.WithPassword(cfg.ObsWebSocketPassword))
-	if err != nil {
-		logger.Fatal().Err(err).Msg("Failed Connecting to OBS")
 	}
 
 	dbStreamsClient, err = dbstreams.New(cfg, db)
@@ -58,48 +65,50 @@ func main() {
 		logger.Fatal().Err(err).Msg("Failed to create MediaMTX Client")
 	}
 
-	obsClient, err = obs.New(cfg, dbStreamsClient, goobsClient, msgCh)
+	// The OBS connection is opened lazily by the obs package, so nothing here
+	// depends on OBS being up yet.
+	obsClient, err = obs.New(cfg, dbStreamsClient, nil, msgCh)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("Failed to OBS Client")
 	}
 
-	logger.Info().Msg("Checking if Proxy Scene exists in OBS")
-	if err := obsClient.InitProxyScene(); err != nil {
-		logger.Fatal().Err(err.Err).Msg("Cannot create OBS Scene")
+	// OBS is normally started by hand, often after the rest of the stack, so
+	// wait for it instead of exiting. Exiting here is what put the container
+	// into a restart loop when OBS was opened a minute late.
+	logger.Info().Msg("Waiting for OBS")
+	for attempt := 1; ; attempt++ {
+		err := obsClient.InitProxyScene()
+		if err == nil {
+			break
+		}
+		logger.Error().Err(err.Err).Msgf("%s (attempt %d, retrying in %s)", err.Message, attempt, obsRetryInterval)
+		time.Sleep(obsRetryInterval)
 	}
 
 	logger.Info().Msg("Starting Proxy Stream")
-
-	// Message Channel
-	go func() {
-		for msg := range msgCh {
-			logger.Info().Msg(msg.Message)
-		}
-	}()
 
 	logger.Info().Msg("Starting API")
 	go api.Run()
 
 	logger.Info().Msg("Starting Stream Syncs")
 	go func() {
-		c := time.Tick(7 * time.Second)
-		for range c {
-			err := mediamtxClient.SyncStreams()
-			if err != nil {
+		c := time.NewTicker(streamSyncInterval)
+		defer c.Stop()
+		for range c.C {
+			if err := mediamtxClient.SyncStreams(); err != nil {
 				logger.Error().Err(err.Err).Msg(err.Message)
 			}
-			errw := obsClient.SyncStreams()
-			if errw != nil {
-				logger.Error().Err(errw.Err).Msg(err.Message)
+			if err := obsClient.SyncStreams(); err != nil {
+				logger.Error().Err(err.Err).Msg(err.Message)
 			}
 		}
 	}()
 
 	logger.Info().Msg("Starting Active Stream Rotation")
-	c := time.Tick(30 * time.Second)
-	for range c {
-		err := obsClient.RotateActiveStream()
-		if err != nil {
+	c := time.NewTicker(rotationInterval)
+	defer c.Stop()
+	for range c.C {
+		if err := obsClient.RotateActiveStream(); err != nil {
 			logger.Error().Err(err.Err).Msg(err.Message)
 		}
 	}
