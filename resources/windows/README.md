@@ -438,7 +438,11 @@ listen tcp 127.0.0.1:9997: bind: An attempt was made to access a socket in a way
 ```
 
 That message reads like a file permission problem. It is not, and running as
-administrator does not help. On Windows that error (`WSAEACCES`) is what you get
+administrator does not help.
+
+The proxy does not sit there when this happens. It waits about 20 seconds for
+MediaMTX's API, then exits with `Cannot reach the MediaMTX API at <address>` in
+its window, so a failed dependency stops the run instead of looking healthy. On Windows that error (`WSAEACCES`) is what you get
 when **the port is already held by something else**, not when the exe lacks
 rights. Windows reports "already in use" this way often enough that it wastes
 people's evenings.

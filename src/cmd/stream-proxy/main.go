@@ -19,6 +19,10 @@ import (
 
 const (
 	streamSyncInterval = 7 * time.Second
+	// MediaMTX is started by the same script as this process, so it should
+	// already be up. Four tries is about 20 seconds, after which something is
+	// wrong and running on without a backend only hides it.
+	mediamtxStartupAttempts = 4
 	// The rotation holds a stream for rotationHold (30s, in the obs package)
 	// and is polled more often than that, so a stream whose publisher has gone
 	// is replaced straight away instead of leaving the scene empty.
@@ -77,6 +81,27 @@ func main() {
 	obsClient, err = obs.New(cfg, dbStreamsClient, nil, msgCh)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("Failed to OBS Client")
+	}
+
+	// MediaMTX is a dependency, not something a human opens later. If its API
+	// never answers, exit with the reason rather than sitting there looking
+	// healthy while nothing can be published to it. The usual cause is a port
+	// collision, either with another copy or with a leftover
+	// "netsh interface portproxy" rule, which Windows reports as a permission
+	// error rather than "address in use".
+	logger.Info().Msg("Waiting for MediaMTX")
+	for attempt := 1; ; attempt++ {
+		startErr := mediamtxClient.SyncStreams()
+		if startErr == nil {
+			break
+		}
+		if attempt >= mediamtxStartupAttempts {
+			logger.Fatal().Err(startErr.Err).
+				Msgf("%s. Giving up after %d attempts", startErr.Message, attempt)
+		}
+		logger.Error().Err(startErr.Err).
+			Msgf("%s (attempt %d of %d, retrying in %s)", startErr.Message, attempt, mediamtxStartupAttempts, obsRetryInterval)
+		time.Sleep(obsRetryInterval)
 	}
 
 	// OBS is normally started by hand, often after the rest of the stack, so
