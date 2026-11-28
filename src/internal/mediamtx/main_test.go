@@ -85,14 +85,59 @@ func TestGetStreams_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(streams) != 2 {
-		t.Fatalf("expected 2 streams, got %d", len(streams))
+	// stream-b is not ready, which is what a path defined in mediamtx.yml with
+	// nothing publishing to it looks like.
+	if len(streams) != 1 {
+		t.Fatalf("expected 1 stream, got %d", len(streams))
 	}
 	if streams[0].Name != "stream-a" {
 		t.Errorf("expected 'stream-a', got %s", streams[0].Name)
 	}
-	if streams[1].Name != "stream-b" {
-		t.Errorf("expected 'stream-b', got %s", streams[1].Name)
+}
+
+// A configured path with no publisher must never become a stream. MediaMTX
+// lists it with ready:false and a null source, and treating it as live puts a
+// media source in OBS that can never connect, which the rotation then shows as
+// a black frame.
+func TestGetStreams_IgnoresPathsWithoutAPublisher(t *testing.T) {
+	response := MediamtxListStreamsResponse{
+		ItemCount: 2,
+		PageCount: 1,
+		Items: []MediamtxListStreamsOutput{
+			{Name: "stage-cam", ConfName: "stage-cam", Ready: false},
+			{Name: "cam1", ConfName: "all_others", Ready: true},
+		},
+	}
+	server := serveJSON(t, response)
+	defer server.Close()
+
+	client, _, _ := newTestClient(t, server.URL)
+	streams, err := client.GetStreams()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(streams) != 1 || streams[0].Name != "cam1" {
+		t.Fatalf("expected only cam1, got %+v", streams)
+	}
+}
+
+// SyncStreams must not add a DB row for an unready path.
+func TestSyncStreams_IgnoresUnreadyPaths(t *testing.T) {
+	response := MediamtxListStreamsResponse{
+		Items: []MediamtxListStreamsOutput{
+			{Name: "stage-cam", Ready: false},
+		},
+	}
+	server := serveJSON(t, response)
+	defer server.Close()
+
+	client, _, dbClient := newTestClient(t, server.URL)
+	if clientErr := client.SyncStreams(); clientErr != nil {
+		t.Fatalf("unexpected error: %v", clientErr.Err)
+	}
+	exists, _ := dbClient.CheckStreamExistsByName("stage-cam")
+	if exists {
+		t.Error("expected the unready path not to be added to the DB")
 	}
 }
 
@@ -160,8 +205,8 @@ func TestGetStreams_CorrectPath(t *testing.T) {
 func TestSyncStreams_AddsNewStreams(t *testing.T) {
 	response := MediamtxListStreamsResponse{
 		Items: []MediamtxListStreamsOutput{
-			{Name: "new-stream-1"},
-			{Name: "new-stream-2"},
+			{Name: "new-stream-1", Ready: true},
+			{Name: "new-stream-2", Ready: true},
 		},
 	}
 	server := serveJSON(t, response)
@@ -197,7 +242,7 @@ func TestSyncStreams_RemovesStaleDBStreams(t *testing.T) {
 	// DB has a stream that mediamtx no longer knows about.
 	response := MediamtxListStreamsResponse{
 		Items: []MediamtxListStreamsOutput{
-			{Name: "live-stream"},
+			{Name: "live-stream", Ready: true},
 		},
 	}
 	server := serveJSON(t, response)
@@ -246,7 +291,7 @@ func TestSyncStreams_RemovesStaleDBStreams(t *testing.T) {
 func TestSyncStreams_NoChanges(t *testing.T) {
 	response := MediamtxListStreamsResponse{
 		Items: []MediamtxListStreamsOutput{
-			{Name: "existing"},
+			{Name: "existing", Ready: true},
 		},
 	}
 	server := serveJSON(t, response)

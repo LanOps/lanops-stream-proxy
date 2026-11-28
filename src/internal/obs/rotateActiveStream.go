@@ -2,7 +2,14 @@ package obs
 
 import (
 	"lanops/obs-proxy-bridge/internal/channels"
+	"time"
 )
+
+// rotationHold is how long a stream stays on screen before the rotation moves
+// on. RotateActiveStream is called more often than this, so a stream whose
+// publisher has gone can be replaced straight away instead of holding an empty
+// scene until the next scheduled changeover.
+const rotationHold = 30 * time.Second
 
 func (client *Client) RotateActiveStream() *ClientError {
 	streamCount, err := client.db.GetAvailableStreamsCount()
@@ -13,80 +20,87 @@ func (client *Client) RotateActiveStream() *ClientError {
 		}
 	}
 
-	if streamCount > 0 {
-		// Check if Active Stream has been removed from DB.
-		// Fixes bug when currently active stream is removed from DB.
-		if client.obsStreams.current != nil {
-			streamExistsInDB, err := client.db.CheckStreamExistsByName(client.obsStreams.current.Name)
-			if err != nil {
-				return &ClientError{
-					Err:     err,
-					Message: "Cannot pull DB Streams",
-				}
-			}
-			if !streamExistsInDB {
-				client.obsStreams.current = nil
-			}
-		}
-
-		nextStream, err := client.db.GetNextEnabledStream(client.obsStreams.current)
-		if err != nil {
-			return &ClientError{
-				Err:     err,
-				Message: "Cannot pull next DB Stream",
-			}
-		}
-		if client.obsStreams.current == nil {
-			// Assume just app just booted OR its the first/only stream
-			// TODO - RESET ALL streams
-			if err = client.setStreamSceneItemsVisibility(*nextStream, true); err != nil {
-				return &ClientError{
-					Err:     err,
-					Message: "Cannot Set Stream Visibility",
-				}
-			}
-			if err = client.setStreamSceneItemsFade(*nextStream, 0, 100); err != nil {
-				return &ClientError{
-					Err:     err,
-					Message: "Cannot Set Stream Visibility",
-				}
-			}
-		}
-		if client.obsStreams.current != nil && nextStream.ID != client.obsStreams.current.ID {
-			go func() *ClientError {
-				if err = client.setStreamSceneItemsVisibility(*nextStream, true); err != nil {
-					return &ClientError{
-						Err:     err,
-						Message: "Cannot Set Stream Visibility",
-					}
-				}
-				if err = client.setStreamSceneItemsFade(*nextStream, 0, 100); err != nil {
-					return &ClientError{
-						Err:     err,
-						Message: "Cannot Set Stream Fade",
-					}
-				}
-				return nil
-			}()
-			if err = client.setStreamSceneItemsFade(*client.obsStreams.current, 100, 0); err != nil {
-				return &ClientError{
-					Err:     err,
-					Message: "Cannot Set Stream Visibility",
-				}
-			}
-			if err = client.setStreamSceneItemsVisibility(*client.obsStreams.current, false); err != nil {
-				return &ClientError{
-					Err:     err,
-					Message: "Cannot Set Stream Fade",
-				}
-			}
-			client.obsStreams.previous = client.obsStreams.current
-		}
-		client.obsStreams.current = nextStream
-	} else {
+	if streamCount == 0 {
 		client.msgCh <- channels.MsgCh{Err: nil, Message: "No Enabled Streams found", Level: "INFO"}
 		client.obsStreams.previous = nil
 		client.obsStreams.current = nil
+		client.visibleSince = time.Time{}
+		return nil
 	}
+
+	// Check if Active Stream has been removed from DB.
+	// Fixes bug when currently active stream is removed from DB.
+	if client.obsStreams.current != nil {
+		streamExistsInDB, err := client.db.CheckStreamExistsByName(client.obsStreams.current.Name)
+		if err != nil {
+			return &ClientError{
+				Err:     err,
+				Message: "Cannot pull DB Streams",
+			}
+		}
+		if !streamExistsInDB {
+			// The publisher stopped. Whoever is next goes up immediately
+			// rather than at the next scheduled changeover.
+			client.obsStreams.current = nil
+			client.visibleSince = time.Time{}
+		}
+	}
+
+	nextStream, err := client.db.GetNextEnabledStream(client.obsStreams.current)
+	if err != nil {
+		return &ClientError{
+			Err:     err,
+			Message: "Cannot pull next DB Stream",
+		}
+	}
+
+	// Nothing on screen: startup, or the visible stream just vanished.
+	if client.obsStreams.current == nil {
+		if err := client.setStreamSceneItemsVisibility(*nextStream, true); err != nil {
+			return &ClientError{
+				Err:     err,
+				Message: "Cannot Set Stream Visibility",
+			}
+		}
+		if err := client.setStreamSceneItemsFade(*nextStream, 0, 100); err != nil {
+			return &ClientError{
+				Err:     err,
+				Message: "Cannot Set Stream Visibility",
+			}
+		}
+		client.obsStreams.current = nextStream
+		client.visibleSince = time.Now()
+		return nil
+	}
+
+	// Something is on screen and still live. Leave it there until it has had
+	// its turn.
+	if nextStream.ID == client.obsStreams.current.ID || time.Since(client.visibleSince) < rotationHold {
+		return nil
+	}
+
+	previous := client.obsStreams.current
+	incoming := nextStream
+	go func() {
+		if err := client.setStreamSceneItemsVisibility(*incoming, true); err != nil {
+			return
+		}
+		_ = client.setStreamSceneItemsFade(*incoming, 0, 100)
+	}()
+	if err := client.setStreamSceneItemsFade(*previous, 100, 0); err != nil {
+		return &ClientError{
+			Err:     err,
+			Message: "Cannot Set Stream Fade",
+		}
+	}
+	if err := client.setStreamSceneItemsVisibility(*previous, false); err != nil {
+		return &ClientError{
+			Err:     err,
+			Message: "Cannot Set Stream Visibility",
+		}
+	}
+	client.obsStreams.previous = previous
+	client.obsStreams.current = incoming
+	client.visibleSince = time.Now()
 	return nil
 }

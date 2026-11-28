@@ -19,8 +19,11 @@ import (
 
 const (
 	streamSyncInterval = 7 * time.Second
-	rotationInterval   = 30 * time.Second
-	obsRetryInterval   = 5 * time.Second
+	// The rotation holds a stream for rotationHold (30s, in the obs package)
+	// and is polled more often than that, so a stream whose publisher has gone
+	// is replaced straight away instead of leaving the scene empty.
+	rotationInterval = 10 * time.Second
+	obsRetryInterval = 5 * time.Second
 )
 
 var (

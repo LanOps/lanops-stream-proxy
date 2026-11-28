@@ -254,7 +254,9 @@ Within 30 seconds `test` appears in the API and in OBS. Stop it with Ctrl+C.
 
 - **One visible at a time.** The rotation shows one stream, then fades to the next, every 30 seconds, in the order the streams were first seen. A changeover fades over 5 seconds.
 - **First appearance takes up to 30 seconds.** Sources are added on a 7 second cycle; the rotation that makes one visible runs on a 30 second cycle.
-- **Stopping a stream cleans up.** When a publisher stops, MediaMTX drops the stream, and the proxy removes its sources from OBS within about 7 seconds. If it was the visible one, the rotation moves on.
+- **Only live streams count.** A path exists in MediaMTX the moment someone publishes to it, and disappears when they stop. Paths that are listed but have no publisher, for example ones defined in `mediamtx.yml`, report as not ready and are ignored. Nothing creates a media source that can never connect.
+- **Stopping a stream cleans up.** When a publisher stops, the proxy removes their sources from OBS within about 7 seconds. If they were the visible one, the rotation moves straight to the next stream instead of waiting out the rest of the 30 seconds. Measured at 7 seconds end to end: publisher killed, sources removed, next stream on screen.
+- **A stream that comes back is enabled again.** Its sources are recreated and it rejoins the rotation. If you had deliberately dropped someone from the rotation, disable them again after they reconnect.
 - **Do not rename or delete `media_source-<name>` or `text-<name>`.** The proxy recreates missing ones, but the fade filters are looked up by source name.
 - **Stay on one scene collection.** The proxy resolves the scene UUID when it connects and keeps using it.
 - **Only the visible stream decodes.** Sources are created with `close_when_inactive`, so OBS drops an RTMP stream as soon as the rotation hides it and reopens it on the way back in. That keeps CPU flat however many streams are enabled. If a build misbehaves with it, set `OBS_CLOSE_WHEN_INACTIVE=false` in `.env`.
