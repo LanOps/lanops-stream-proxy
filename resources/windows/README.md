@@ -106,9 +106,44 @@ Either:
 
 Until you do this the proxy works perfectly and nothing appears on stream.
 
-## 6. Check it is working
+## 6. Connecting to the proxy
 
-Streams are picked up automatically. To see what the proxy knows about:
+The proxy has no web interface. It listens on a port and answers three endpoints over HTTP, with basic auth.
+
+### Address
+
+| Connecting from | Address |
+|---|---|
+| the OBS machine | `http://127.0.0.1:8080` |
+| another machine on the LAN, a phone or a laptop | `http://<proxy-machine-lan-ip>:8080` |
+
+The port is `API_PORT` in `.env`, 8080 in the bundle.
+
+### Credentials
+
+`API_ADMIN_USERNAME` and `API_ADMIN_PASSWORD` from `.env`. The bundle generates the password, so read it from the file rather than guessing:
+
+```
+notepad .env
+```
+
+Every request needs them. There are no anonymous endpoints.
+
+Windows Firewall asks about `stream-proxy.exe` on 8080 during the first run. Allow it if anyone needs the API from another machine; if only the OBS machine ever calls it, that rule can stay blocked.
+
+### Endpoints
+
+| Endpoint | Method | Body | What it does |
+|---|---|---|---|
+| `/streams` | GET | | every stream the proxy has seen, with `enabled` |
+| `/streams/<name>` | GET | | one stream |
+| `/streams/<name>/enable` | POST | `{"enabled": true}` or `{"enabled": false}` | puts a stream into or out of the rotation |
+
+### From a browser
+
+Open `http://127.0.0.1:8080/streams`. The browser asks for the username and password, then shows the raw JSON. That is the whole interface: there is nothing to click.
+
+### From a command prompt
 
 ```
 curl -u admin:PASSWORD http://127.0.0.1:8080/streams
@@ -126,6 +161,8 @@ To take a stream out of the rotation, which also removes its sources from OBS:
 curl -u admin:PASSWORD -X POST -H "Content-Type: application/json" -d "{\"enabled\":false}" http://127.0.0.1:8080/streams/cam1/enable
 ```
 
+Setting it back to `true` re-adds the sources within about 7 seconds.
+
 Those are Command Prompt commands. In PowerShell `curl` can be an alias for `Invoke-WebRequest`, which takes different arguments, so use `curl.exe` or this instead:
 
 ```powershell
@@ -135,7 +172,9 @@ Invoke-RestMethod -Uri http://127.0.0.1:8080/streams/cam1/enable -Method Post -C
   -ContentType 'application/json' -Body '{"enabled":false}'
 ```
 
-Setting it back to `true` re-adds the sources within about 7 seconds.
+### This is not how viewers watch
+
+The proxy does not serve video. It only drives OBS. Viewers watch whatever OBS outputs, to Twitch, YouTube or a file. MediaMTX on this machine is configured with RTMP and the API only, so there is no viewer page or stream here either.
 
 ## 7. How the streamers connect
 
