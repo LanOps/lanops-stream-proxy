@@ -4,8 +4,12 @@
 logLevel: info
 
 # The proxy polls this to discover live streams.
+# 1936 rather than MediaMTX's default 9997, because 9997 sits inside a range
+# Windows reserves for Hyper-V/WSL on many machines and the bind is refused.
+# If 1936 is refused too, pick any free port and change MEDIAMTX_API_ADDRESS
+# in .env to match.
 api: yes
-apiAddress: 127.0.0.1:9997
+apiAddress: 127.0.0.1:1936
 
 # Streamers push here.
 rtmp: yes
