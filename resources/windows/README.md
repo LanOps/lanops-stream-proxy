@@ -56,6 +56,7 @@ Notepad's Open dialog filters for `.txt` and will not show the file, hence the c
 | `OBS_WEBSOCKET_ADDRESS` | `127.0.0.1:4455` when OBS is on this machine |
 | `OBS_WEBSOCKET_PASSWORD` | Empty if OBS auth is off, otherwise the OBS password |
 | `OBS_PROXY_SCENE_NAME` | `Proxy Scenes`. The scene the proxy creates |
+| `OBS_CLOSE_WHEN_INACTIVE` | `true`. Stops OBS decoding streams that are not on screen. Only set it to `false` if the picture fails to come back after a changeover |
 | `MEDIAMTX_API_ADDRESS` | `127.0.0.1:9997`. Leave it |
 | `MEDIAMTX_RTMP_ADDRESS` | `127.0.0.1:1935` when OBS is on this machine |
 | `API_ADMIN_USERNAME` | The username for the API |
@@ -155,12 +156,12 @@ The stream key becomes the stream name in OBS and in the API. Stream names with 
 
 ## While it is running
 
-- **One visible at a time.** The rotation shows one stream, then fades to the next, every 30 seconds, in the order the streams were first seen. A changeover takes about 5 seconds to fade.
+- **One visible at a time.** The rotation shows one stream, then fades to the next, every 30 seconds, in the order the streams were first seen. A changeover fades over 5 seconds.
 - **First appearance takes up to 30 seconds.** Sources are added on a 7 second cycle; the rotation that makes one visible runs on a 30 second cycle.
 - **Stopping a stream cleans up.** When a publisher stops, MediaMTX drops the stream, and the proxy removes its sources from OBS within about 7 seconds. If it was the visible one, the rotation moves on.
 - **Do not rename or delete `media_source-<name>` or `text-<name>`.** The proxy recreates missing ones, but the fade filters are looked up by source name.
 - **Stay on one scene collection.** The proxy resolves the scene UUID when it connects and keeps using it.
-- **CPU scales with enabled streams.** Each one is a live H.264 decode in OBS. Ten enabled streams is ten concurrent decodes, whether or not they are visible in the rotation. Disable the ones you are not using.
+- **Only the visible stream decodes.** Sources are created with `close_when_inactive`, so OBS drops an RTMP stream as soon as the rotation hides it and reopens it on the way back in. That keeps CPU flat however many streams are enabled. If a build misbehaves with it, set `OBS_CLOSE_WHEN_INACTIVE=false` in `.env`.
 
 ## OBS on another machine
 

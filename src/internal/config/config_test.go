@@ -71,6 +71,32 @@ func TestLoad_EmptyObsPasswordAllowed(t *testing.T) {
 	}
 }
 
+func TestLoad_CloseWhenInactive(t *testing.T) {
+	cases := []struct {
+		name string
+		set  string
+		want bool
+	}{
+		{"default is on", "", true},
+		{"explicit false", "false", false},
+		{"explicit true", "true", true},
+		{"nonsense falls back to on", "banana", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			setAllEnvVars(t)
+			if tc.set == "" {
+				t.Setenv("OBS_CLOSE_WHEN_INACTIVE", "")
+			} else {
+				t.Setenv("OBS_CLOSE_WHEN_INACTIVE", tc.set)
+			}
+			if got := Load().ObsCloseWhenInactive; got != tc.want {
+				t.Errorf("expected %v, got %v", tc.want, got)
+			}
+		})
+	}
+}
+
 func TestConfig_Struct(t *testing.T) {
 	cfg := Config{
 		DbPath:               "test.db",

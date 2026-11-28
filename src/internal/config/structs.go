@@ -6,6 +6,7 @@ type Config struct {
 	ObsWebSocketPassword string
 	ObsProxySceneName    string
 	ObsProxySceneUuid    string
+	ObsCloseWhenInactive bool
 	MediaMtxApiAddress   string
 	MediaMtxRtmpAddress  string
 	ApiAdminUsername     string
