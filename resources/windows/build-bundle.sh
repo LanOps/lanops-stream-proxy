@@ -67,4 +67,13 @@ fi
 
 echo ">> writing ${ZIP}"
 (cd "${OUT_DIR}" && zip -r -q -9 "${ZIP}" .)
+
+# A checksum next to the zip, so a download can be verified without trusting the
+# page it came from.
+if command -v sha256sum >/dev/null 2>&1; then
+	(cd "$(dirname "${ZIP}")" && sha256sum "$(basename "${ZIP}")" > "$(basename "${ZIP}").sha256")
+elif command -v shasum >/dev/null 2>&1; then
+	(cd "$(dirname "${ZIP}")" && shasum -a 256 "$(basename "${ZIP}")" > "$(basename "${ZIP}").sha256")
+fi
+
 echo ">> done: ${ZIP}"

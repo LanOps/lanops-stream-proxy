@@ -19,18 +19,21 @@ MediaMTX version that was packaged with it.
 
 ## What CI does
 
-On every push to `main` and every tag, Drone:
+Two systems, split by what each can actually do.
 
-1. lints and tests (`go test -race ./...`)
-2. compiles the Windows binary, a fast check that stays cgo-free
-3. builds the bundle with `resources/windows/build-bundle.sh`, so a broken
-   packaging step fails before a release depends on it
+**GitHub Actions** (`.github/workflows/windows.yml`) owns everything Windows and
+the release, because its `windows-latest` runner can execute the binary:
 
-On tags only, it additionally:
+1. `go vet` and `go test ./...` on Windows
+2. builds `stream-proxy.exe` for windows/amd64
+3. **runs it**: with nothing on the MediaMTX address it must print its version,
+   refuse to start and exit 1. That is the check a Linux container cannot make
+4. packages the bundle on Linux with `resources/windows/build-bundle.sh`, so the
+   packaging path is exercised on every push to main
+5. on tags, attaches the zip and its `.sha256` to a **draft** release
 
-4. uploads `dist/lanops-stream-proxy-windows-<tag>.zip` to a **draft** release,
-   with a `.sha256` alongside it
-5. pushes the Docker image tagged with the version (`auto_tag`)
+**Drone** keeps what it already did: lint, the Linux test run, and the Docker
+image push on main and tags.
 
 Nothing is published automatically. The draft is yours to check, describe and
 publish.
@@ -46,12 +49,15 @@ publish.
    Keep the "Not verified" caveat if CI still cannot execute the binary.
 5. Publish.
 
-## Required secret
+## Required settings
 
-The release step needs a Drone repository secret named `github_token`, a token
-with `repo` scope on `LanOps/lanops-stream-proxy`. Without it, tag builds fail at
-`release-windows` after the bundle has been built. The existing `dockerhub_*`
-and `discord_webhook_url` secrets are unaffected.
+GitHub Actions needs no secrets: the draft release uses the workflow's own
+`GITHUB_TOKEN` with `contents: write`, declared in the workflow.
+
+Drone still needs its existing `dockerhub_username`, `dockerhub_token` and
+`discord_webhook_url` secrets for the image push and notifications. The Windows
+workflow is deliberately independent of them, so a missing Drone secret cannot
+block a Windows build.
 
 ## Building and releasing by hand
 

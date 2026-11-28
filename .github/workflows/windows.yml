@@ -1,0 +1,162 @@
+name: windows
+
+# Windows is the platform the bundle ships for, so this runs on a real Windows
+# runner rather than a Linux container. Drone keeps doing lint, the Linux test
+# run and the Docker image; this owns everything Windows and the release.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Read by the api package's init() at test-binary start, same as the Drone
+  # test step. Not secrets.
+  DB_PATH: test.db
+  OBS_WEBSOCKET_ADDRESS: localhost:4455
+  OBS_WEBSOCKET_PASSWORD: testpassword
+  OBS_PROXY_SCENE_NAME: TestProxyScene
+  MEDIAMTX_API_ADDRESS: localhost:9997
+  MEDIAMTX_RTMP_ADDRESS: localhost:1935
+  API_ADMIN_USERNAME: testadmin
+  API_ADMIN_PASSWORD: testpassword
+  API_PORT: "18080"
+
+jobs:
+  windows:
+    name: Build and run on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      - name: Work out the version
+        id: version
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Vet and test
+        working-directory: src
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Build
+        shell: bash
+        run: |
+          mkdir -p dist
+          cd src
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+            go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.value }}" \
+            -o ../dist/stream-proxy.exe ./cmd/stream-proxy
+
+      # The one check the Linux pipeline cannot make: does the binary actually
+      # start on Windows? With nothing on the MediaMTX address it must print its
+      # version, refuse to run, and exit 1 rather than hanging or crashing.
+      - name: Smoke test the binary
+        shell: pwsh
+        run: |
+          $env:MEDIAMTX_API_ADDRESS = "127.0.0.1:9"
+
+          $process = Start-Process -FilePath .\dist\stream-proxy.exe -PassThru -NoNewWindow `
+            -RedirectStandardOutput smoke.out -RedirectStandardError smoke.err
+
+          if (-not $process.WaitForExit(90000)) {
+            $process.Kill()
+            throw "stream-proxy.exe did not exit within 90 seconds"
+          }
+          $process.WaitForExit()
+
+          Write-Host "exit code: $($process.ExitCode)"
+          Get-Content smoke.out
+          Get-Content smoke.err
+
+          if ($process.ExitCode -ne 1) {
+            throw "expected exit code 1 when MediaMTX is unreachable, got $($process.ExitCode)"
+          }
+          if (-not (Select-String -Path smoke.out -SimpleMatch "LanOps stream proxy" -Quiet)) {
+            throw "expected the version banner on stdout"
+          }
+          if (-not (Select-String -Path smoke.err -SimpleMatch "Cannot reach the MediaMTX API" -Quiet)) {
+            throw "expected the MediaMTX failure message on stderr"
+          }
+
+      - name: Keep the built binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: stream-proxy-windows
+          path: dist/stream-proxy.exe
+
+  bundle:
+    name: Package the bundle
+    needs: windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      - name: Work out the version
+        id: version
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the bundle
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: ./resources/windows/build-bundle.sh
+
+      - name: Keep the bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bundle
+          path: |
+            dist/lanops-stream-proxy-windows-*.zip
+            dist/lanops-stream-proxy-windows-*.zip.sha256
+
+  release:
+    name: Draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-bundle
+          path: dist
+
+      - name: Attach the bundle to a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft \
+                 --title "$tag" \
+                 --notes "Windows bundle built from ${GITHUB_SHA}. Write the notes, then publish."
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber dist/*.zip dist/*.zip.sha256
