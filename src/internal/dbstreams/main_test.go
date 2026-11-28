@@ -3,6 +3,7 @@ package dbstreams
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"lanops/obs-proxy-bridge/internal/config"
 
@@ -440,4 +441,92 @@ func TestUpdateStream_ReturnsUpdatedStream(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	_ = updated
+}
+
+// ── Live / offline lifecycle ─────────────────────────────────────────────────
+
+func TestMarkStreamLiveAndOffline(t *testing.T) {
+	client := setupTestDB(t)
+	mustCreate(t, client, "cam")
+
+	live, err := client.IsStreamLive("cam")
+	if err != nil {
+		t.Fatalf("IsStreamLive: %v", err)
+	}
+	if !live {
+		t.Error("a newly created stream should be live")
+	}
+
+	if err := client.MarkStreamOffline("cam"); err != nil {
+		t.Fatalf("MarkStreamOffline: %v", err)
+	}
+	live, _ = client.IsStreamLive("cam")
+	if live {
+		t.Error("expected the stream to be offline")
+	}
+
+	// The row survives, so identity and the enabled flag are preserved.
+	still, err := client.GetStreamByName("cam")
+	if err != nil {
+		t.Fatalf("row should still exist: %v", err)
+	}
+	if !still.Enabled {
+		t.Error("expected the enabled flag to survive going offline")
+	}
+
+	if err := client.MarkStreamLive("cam"); err != nil {
+		t.Fatalf("MarkStreamLive: %v", err)
+	}
+	live, _ = client.IsStreamLive("cam")
+	if !live {
+		t.Error("expected the stream to be live again")
+	}
+}
+
+func TestPruneOfflineStreams(t *testing.T) {
+	client := setupTestDB(t)
+	mustCreate(t, client, "stays")
+	mustCreate(t, client, "gone")
+	if err := client.MarkStreamOffline("gone"); err != nil {
+		t.Fatalf("MarkStreamOffline: %v", err)
+	}
+
+	// A cutoff in the future stands in for "older than the retention window",
+	// without having to move the clock.
+	if err := client.PruneOfflineStreams(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("PruneOfflineStreams: %v", err)
+	}
+
+	if exists, _ := client.CheckStreamExistsByName("gone"); exists {
+		t.Error("expected the offline stream to be pruned")
+	}
+	if exists, _ := client.CheckStreamExistsByName("stays"); !exists {
+		t.Error("expected the live stream to survive pruning")
+	}
+}
+
+// Offline streams must not be offered to the rotation.
+func TestOfflineStreamsAreNotRotated(t *testing.T) {
+	client := setupTestDB(t)
+	mustCreate(t, client, "visible")
+	mustCreate(t, client, "offline")
+	if err := client.MarkStreamOffline("offline"); err != nil {
+		t.Fatalf("MarkStreamOffline: %v", err)
+	}
+
+	count, err := client.GetAvailableStreamsCount()
+	if err != nil {
+		t.Fatalf("GetAvailableStreamsCount: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected only the live stream to count, got %d", count)
+	}
+
+	next, err := client.GetNextEnabledStream(nil)
+	if err != nil {
+		t.Fatalf("GetNextEnabledStream: %v", err)
+	}
+	if next.Name != "visible" {
+		t.Errorf("expected 'visible', got %q", next.Name)
+	}
 }

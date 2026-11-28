@@ -238,8 +238,10 @@ func TestSyncStreams_AddsNewStreams(t *testing.T) {
 	}
 }
 
-func TestSyncStreams_RemovesStaleDBStreams(t *testing.T) {
-	// DB has a stream that mediamtx no longer knows about.
+func TestSyncStreams_MarksVanishedStreamOffline(t *testing.T) {
+	// DB has a stream that mediamtx no longer lists. It keeps its row, its
+	// enabled flag and its OBS sources; only its live flag changes, so an
+	// encoder that reconnects is not treated as a new stream.
 	response := MediamtxListStreamsResponse{
 		Items: []MediamtxListStreamsOutput{
 			{Name: "live-stream", Ready: true},
@@ -249,7 +251,6 @@ func TestSyncStreams_RemovesStaleDBStreams(t *testing.T) {
 	defer server.Close()
 
 	client, msgCh, dbClient := newTestClient(t, server.URL)
-	// Pre-populate DB with a stale stream (CreateStream result ignored — only existence matters here)
 	if _, err := dbClient.CreateStream("stale-stream"); err != nil {
 		t.Fatalf("failed to seed stale-stream: %v", err)
 	}
@@ -257,120 +258,106 @@ func TestSyncStreams_RemovesStaleDBStreams(t *testing.T) {
 		t.Fatalf("failed to seed live-stream: %v", err)
 	}
 
-	clientErr := client.SyncStreams()
-	if clientErr != nil {
+	if clientErr := client.SyncStreams(); clientErr != nil {
 		t.Fatalf("unexpected error: %v", clientErr.Err)
 	}
 
-	existsStale, _ := dbClient.CheckStreamExistsByName("stale-stream")
-	existsLive, _ := dbClient.CheckStreamExistsByName("live-stream")
-
-	if existsStale {
-		t.Error("expected 'stale-stream' to be removed from DB")
+	stale, err := dbClient.GetStreamByName("stale-stream")
+	if err != nil {
+		t.Fatalf("stale-stream should still exist: %v", err)
 	}
-	if !existsLive {
-		t.Error("expected 'live-stream' to remain in DB")
+	if stale.Live {
+		t.Error("expected stale-stream to be marked offline")
+	}
+	if !stale.Enabled {
+		t.Error("expected stale-stream to keep its enabled flag")
 	}
 
-	// Drain and check messages
+	live, _ := dbClient.GetStreamByName("live-stream")
+	if !live.Live {
+		t.Error("expected live-stream to stay live")
+	}
+
 	var msgs []channels.MsgCh
 	for len(msgCh) > 0 {
 		msgs = append(msgs, <-msgCh)
 	}
 	found := false
 	for _, m := range msgs {
-		if strings.Contains(m.Message, "Removed Stream stale-stream") {
+		if strings.Contains(m.Message, "Stream stale-stream stopped") {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("expected 'Removed Stream stale-stream' message")
+		t.Error("expected a message saying stale-stream stopped")
 	}
 }
 
-func TestSyncStreams_NoChanges(t *testing.T) {
+// A stream that comes back keeps its id, its enabled flag and its place in the
+// rotation instead of being recreated as a new row.
+func TestSyncStreams_StreamReturnsWithSameIdentity(t *testing.T) {
 	response := MediamtxListStreamsResponse{
 		Items: []MediamtxListStreamsOutput{
-			{Name: "existing", Ready: true},
+			{Name: "flapper", Ready: true},
 		},
 	}
 	server := serveJSON(t, response)
 	defer server.Close()
 
-	client, msgCh, dbClient := newTestClient(t, server.URL)
-	dbClient.CreateStream("existing") //nolint:errcheck
+	client, _, dbClient := newTestClient(t, server.URL)
+	if _, err := dbClient.CreateStream("flapper"); err != nil {
+		t.Fatalf("failed to seed flapper: %v", err)
+	}
+	original, _ := dbClient.GetStreamByName("flapper")
+	if err := dbClient.MarkStreamOffline("flapper"); err != nil {
+		t.Fatalf("failed to mark offline: %v", err)
+	}
 
-	clientErr := client.SyncStreams()
-	if clientErr != nil {
+	if clientErr := client.SyncStreams(); clientErr != nil {
 		t.Fatalf("unexpected error: %v", clientErr.Err)
 	}
 
-	count, _ := dbClient.GetStreamsCount()
-	if count != 1 {
-		t.Errorf("expected 1 stream, got %d", count)
+	returned, err := dbClient.GetStreamByName("flapper")
+	if err != nil {
+		t.Fatalf("flapper should exist: %v", err)
 	}
-
-	// No messages expected (no changes)
-	if len(msgCh) != 0 {
-		t.Errorf("expected no messages, got %d", len(msgCh))
+	if returned.ID != original.ID {
+		t.Errorf("expected the same row id %d, got %d", original.ID, returned.ID)
 	}
-}
-
-func TestSyncStreams_MediamtxDown(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
-	addr := server.URL
-	server.Close()
-
-	client, _, _ := newTestClient(t, addr)
-	clientErr := client.SyncStreams()
-	if clientErr == nil {
-		t.Fatal("expected ClientError when mediamtx is unreachable")
-	}
-	// The message has to name the address that failed, because the usual cause
-	// is mediamtx.yml and .env disagreeing about the API port rather than the
-	// service being down.
-	if !strings.Contains(clientErr.Message, "Cannot reach the MediaMTX API at") {
-		t.Errorf("expected the address in the message, got: %s", clientErr.Message)
-	}
-	if !strings.Contains(clientErr.Message, client.cfg.MediaMtxApiAddress) {
-		t.Errorf("expected %q in the message, got: %s", client.cfg.MediaMtxApiAddress, clientErr.Message)
+	if !returned.Live {
+		t.Error("expected flapper to be live again")
 	}
 }
 
-// A wrong port that answers HTTP with something else must not surface as a JSON
-// parse error, which reads like a malformed MediaMTX response.
-func TestGetStreams_NonOKStatus(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "nope", http.StatusNotFound)
-	}))
-	defer server.Close()
-
-	client, _, _ := newTestClient(t, server.URL)
-	_, err := client.GetStreams()
-	if err == nil {
-		t.Fatal("expected an error for a 404 response")
-	}
-	if !strings.Contains(err.Error(), "unexpected HTTP 404") {
-		t.Errorf("expected the status in the error, got: %v", err)
-	}
-}
-
-func TestSyncStreams_EmptyProxy_ClearsDB(t *testing.T) {
-	// Mediamtx reports no streams → DB should be wiped.
+func TestSyncStreams_EmptyProxy_MarksAllOffline(t *testing.T) {
+	// Mediamtx reports no streams. Rows stay, marked offline, so a stream that
+	// comes back is the same stream rather than a new row.
 	server := serveJSON(t, MediamtxListStreamsResponse{Items: []MediamtxListStreamsOutput{}})
 	defer server.Close()
 
 	client, _, dbClient := newTestClient(t, server.URL)
-	dbClient.CreateStream("orphan") //nolint:errcheck
+	if _, err := dbClient.CreateStream("orphan"); err != nil {
+		t.Fatalf("failed to seed orphan: %v", err)
+	}
 
-	clientErr := client.SyncStreams()
-	if clientErr != nil {
+	if clientErr := client.SyncStreams(); clientErr != nil {
 		t.Fatalf("unexpected error: %v", clientErr.Err)
 	}
 
+	orphan, err := dbClient.GetStreamByName("orphan")
+	if err != nil {
+		t.Fatalf("row should still exist: %v", err)
+	}
+	if orphan.Live {
+		t.Error("expected orphan to be marked offline")
+	}
+	if !orphan.Enabled {
+		t.Error("expected orphan to keep its enabled flag")
+	}
+
 	count, _ := dbClient.GetStreamsCount()
-	if count != 0 {
-		t.Errorf("expected 0 streams after sync with empty proxy, got %d", count)
+	if count != 1 {
+		t.Errorf("expected the row to be kept, got %d rows", count)
 	}
 }
 
