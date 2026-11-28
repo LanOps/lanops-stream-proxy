@@ -9,8 +9,15 @@ set -euo pipefail
 MEDIAMTX_VERSION="${MEDIAMTX_VERSION:-1.14.0}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# The version is stamped into the binary and the bundle name, so a report of
+# "it does not work" can be tied to an exact build. CI passes the tag; locally
+# it falls back to git describe.
+VERSION="${VERSION:-$(git -C "${REPO_ROOT}" describe --tags --always --dirty 2>/dev/null || echo dev)}"
+COMMIT="$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+
 OUT_DIR="${REPO_ROOT}/dist/lanops-stream-proxy-windows"
-ZIP="${REPO_ROOT}/dist/lanops-stream-proxy-windows.zip"
+ZIP="${REPO_ROOT}/dist/lanops-stream-proxy-windows-${VERSION}.zip"
 
 for bin in go curl unzip zip; do
 	if ! command -v "${bin}" >/dev/null 2>&1; then
@@ -22,11 +29,12 @@ done
 rm -rf "${OUT_DIR}" "${ZIP}"
 mkdir -p "${OUT_DIR}"
 
-echo ">> building stream-proxy.exe"
+echo ">> building stream-proxy.exe ${VERSION} (${COMMIT})"
 (
 	cd "${REPO_ROOT}/src"
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-		go build -ldflags="-s -w" -o "${OUT_DIR}/stream-proxy.exe" ./cmd/stream-proxy
+		go build -ldflags="-s -w -X main.version=${VERSION}" \
+		-o "${OUT_DIR}/stream-proxy.exe" ./cmd/stream-proxy
 )
 
 echo ">> fetching MediaMTX ${MEDIAMTX_VERSION}"
@@ -44,6 +52,12 @@ cp "${REPO_ROOT}/resources/windows/mediamtx.yml" \
 	"${REPO_ROOT}/resources/windows/README.md" \
 	"${OUT_DIR}/"
 cp "${REPO_ROOT}/resources/windows/.env.example" "${OUT_DIR}/.env"
+
+cat > "${OUT_DIR}/VERSION.txt" <<EOF
+${VERSION}
+commit ${COMMIT}
+MediaMTX ${MEDIAMTX_VERSION}
+EOF
 
 # A generated API password beats shipping a known default.
 if command -v openssl >/dev/null 2>&1; then
