@@ -57,7 +57,7 @@ Notepad's Open dialog filters for `.txt` and will not show the file, hence the c
 | `OBS_WEBSOCKET_PASSWORD` | Empty if OBS auth is off, otherwise the OBS password |
 | `OBS_PROXY_SCENE_NAME` | `Proxy Scenes`. The scene the proxy creates |
 | `OBS_CLOSE_WHEN_INACTIVE` | `true`. Stops OBS decoding streams that are not on screen. Only set it to `false` if the picture fails to come back after a changeover |
-| `MEDIAMTX_API_ADDRESS` | `127.0.0.1:1936`. Must match `apiAddress` in `mediamtx.yml`. Not MediaMTX's default 9997, because Windows refuses that on machines with Hyper-V or WSL installed |
+| `MEDIAMTX_API_ADDRESS` | `127.0.0.1:9997`. Must match `apiAddress` in `mediamtx.yml` |
 | `MEDIAMTX_RTMP_ADDRESS` | `127.0.0.1:1935` when OBS is on this machine |
 | `API_ADMIN_USERNAME` | The username for the API |
 | `API_ADMIN_PASSWORD` | Already set to a generated value. Change it if you like |
@@ -404,18 +404,14 @@ MediaMTX opens two ports, and either can hit this:
 
 | Port | What it is | Where it is set |
 |---|---|---|
-| 1936 | the API the proxy polls | `apiAddress` in `mediamtx.yml`, `MEDIAMTX_API_ADDRESS` in `.env` |
+| 9997 | the API the proxy polls | `apiAddress` in `mediamtx.yml`, `MEDIAMTX_API_ADDRESS` in `.env` |
 | 1935 | RTMP, where streamers publish | `rtmpAddress` in `mediamtx.yml`, `MEDIAMTX_RTMP_ADDRESS` in `.env` |
 
-The bundle ships the API on 1936 rather than MediaMTX's own default of 9997,
-because 9997 is the one that gets refused on a Windows machine with WSL or
-Hyper-V installed.
-
 Read which port MediaMTX named in its error, then check it in an admin Command
-Prompt, replacing 1936 with whichever port was refused:
+Prompt:
 
 ```
-netstat -ano | findstr :1936
+netstat -ano | findstr :9997
 netsh int ipv4 show excludedportrange protocol=tcp
 ```
 
@@ -425,7 +421,7 @@ for MediaMTX yourself, which needs an admin prompt:
 
 ```
 net stop winnat
-netsh int ipv4 add excludedportrange protocol=tcp startport=1936 numberofports=1
+netsh int ipv4 add excludedportrange protocol=tcp startport=9997 numberofports=1
 net start winnat
 ```
 
