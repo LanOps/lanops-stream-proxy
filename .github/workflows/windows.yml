@@ -1,8 +1,8 @@
 name: windows
 
 # Windows is the platform the bundle ships for, so this runs on a real Windows
-# runner rather than a Linux container. Drone keeps doing lint, the Linux test
-# run and the Docker image; this owns everything Windows and the release.
+# runner rather than a Linux container. ci.yml covers lint, the Linux test run
+# and the Docker image; this owns everything Windows and the release.
 
 on:
   push:
@@ -17,8 +17,7 @@ permissions:
   contents: write
 
 env:
-  # Read by the api package's init() at test-binary start, same as the Drone
-  # test step. Not secrets.
+  # Read by the api package's init() at test-binary start. Not secrets.
   DB_PATH: test.db
   OBS_WEBSOCKET_ADDRESS: localhost:4455
   OBS_WEBSOCKET_PASSWORD: testpassword

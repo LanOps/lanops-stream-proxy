@@ -1,0 +1,84 @@
+name: ci
+
+# What Drone used to do, on GitHub's runners: lint, the Linux test run and a
+# Docker image build. Windows and the release live in windows.yml. Nothing is
+# published to Docker Hub.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Read by the api package's init() when a test binary starts. Not secrets.
+  DB_PATH: test.db
+  OBS_WEBSOCKET_ADDRESS: localhost:4455
+  OBS_WEBSOCKET_PASSWORD: testpassword
+  OBS_PROXY_SCENE_NAME: TestProxyScene
+  MEDIAMTX_API_ADDRESS: localhost:9997
+  MEDIAMTX_RTMP_ADDRESS: localhost:1935
+  API_ADMIN_USERNAME: testadmin
+  API_ADMIN_PASSWORD: testpassword
+  API_PORT: "18080"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+          working-directory: src
+          args: --timeout=10m
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      - name: go test -race
+        working-directory: src
+        run: go test -race ./...
+
+  image:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+      - test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build only. The image is not published to Docker Hub, so there is no
+      # login and no push; this exists so the Dockerfile cannot rot unnoticed.
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: resources/docker/Dockerfile
+          tags: lanops-stream-proxy:ci
+          push: false
