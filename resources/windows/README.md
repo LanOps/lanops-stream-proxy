@@ -218,6 +218,19 @@ order of likelihood:
   block wireless clients from talking to each other. Test from a wired port
   before believing anything else.
 
+With the Windows firewall off and the port still listed, the drop is before
+Windows gets the packet. Prove it with ICMP, which has nothing to do with the
+application:
+
+```
+ping <this-machine-lan-ip>            # from the client
+ping <client-ip>                      # from this machine
+```
+
+If either direction fails, it is addressing, VLANs or switch isolation, not the
+proxy. If ping works and only TCP fails, look for a third-party security suite
+that kept its own firewall when the Windows one was turned off.
+
 `TcpTestSucceeded : True` but the request still fails means the network is fine
 and it is auth: check you are using `API_ADMIN_USERNAME` and `API_ADMIN_PASSWORD`
 from `.env`, not the OBS or MediaMTX password.
@@ -352,13 +365,24 @@ before they reach the program, and Windows Firewall drops by default. If
 MediaMTX were not running, or were on another port, you would get refused
 instead.
 
-**1. Confirm MediaMTX is listening on every interface, not just loopback:**
+**0. Confirm MediaMTX is running at all.** A MediaMTX that could not bind its
+API port exits, and its window is minimised, so the proxy can still be up while
+nothing is listening on 1935. Start it in a normal console to read the error
+rather than a minimised one:
 
 ```
-netstat -ano | findstr :1935
+mediamtx.exe mediamtx.yml
 ```
 
-Expect `0.0.0.0:1935`. `127.0.0.1:1935` means nothing external can reach it.
+**1. Confirm it is listening on every interface, not just loopback:**
+
+```
+netstat -ano | findstr ":1935 :1936 :9997"
+```
+
+Expect `0.0.0.0:1935` for RTMP and `127.0.0.1:<api port>` for the API both
+listed against `mediamtx.exe`. Nothing at all on the RTMP port means the
+service is not running, and no amount of firewall work will help.
 
 **2. Allow the port, from an admin prompt.** This adds a rule for every network
 profile, which matters because rules created by the first-run prompt only cover
