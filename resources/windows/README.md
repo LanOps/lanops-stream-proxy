@@ -137,22 +137,77 @@ Invoke-RestMethod -Uri http://127.0.0.1:8080/streams/cam1/enable -Method Post -C
 
 Setting it back to `true` re-adds the sources within about 7 seconds.
 
-## 7. Tell the streamers where to push
+## 7. How the streamers connect
 
-Streamers point their own OBS at MediaMTX:
+Any RTMP encoder works. Most people will use OBS on their own machine, and it
+only needs three things.
 
-**Settings > Stream > Service: Custom**
+### In their OBS
 
-- Server: `rtmp://<this-pc-lan-ip>:1935`
-- Stream Key: the name they want to appear, for example `cam1`
+**Settings > Stream**
 
-Or from ffmpeg:
+- **Service**: `Custom...`
+- **Server**: `rtmp://<proxy-machine-lan-ip>:1935`
+- **Stream Key**: their stream name, for example `cam1`
+
+Then **Start Streaming**. Nothing else needs changing, and they do not need to
+install anything.
+
+Anything that can publish RTMP works the same way: Streamlabs, vMix, Larix on a
+phone, or ffmpeg:
 
 ```
-ffmpeg -re -i input.mp4 -c:v libx264 -preset veryfast -tune zerolatency -f flv rtmp://<this-pc-ip>:1935/cam1
+ffmpeg -re -i input.mp4 -c:v libx264 -preset veryfast -tune zerolatency \
+       -g 30 -f flv rtmp://<proxy-machine-lan-ip>:1935/cam1
 ```
 
-The stream key becomes the stream name in OBS and in the API. Stream names with spaces or slashes make awkward source names, so keep them simple.
+### The stream key is the stream name
+
+That string becomes the source name in OBS, the label on screen, and the name
+in the API. Four rules, and the first two have already cost people an evening:
+
+- **Every key must be unique.** Two publishers on the same key fight. MediaMTX
+  drops the one that connected first, so the older streamer's encoder dies with
+  a broken pipe, reconnects, drops the other one, and the source stutters. If
+  two streams keep flickering, look for a duplicate key.
+- **Keys are case sensitive.** `cam1` and `Cam1` are two different streams, and
+  both will appear in OBS.
+- Keep them short and lowercase, with no spaces or slashes. `cam1`, `cam2`,
+  `stage`, `desk-left`.
+- Agree the names before the event. The label is what the audience sees, so the
+  key is also the caption.
+
+### What happens when they go live
+
+- The stream appears in the `Proxy Scenes` scene within about 30 seconds, as a
+  media source and a name label. It is enabled automatically, so it joins the
+  rotation.
+- Widescreen 16:9 sources fill the frame. Anything else, a phone in portrait for
+  example, is centred with black bars down the sides.
+- Their audio comes through with the picture. If you do not want a streamer's
+  mic in the programme mix, mute the `media_source-<name>` source in OBS.
+- When they stop, MediaMTX drops the stream and the proxy removes their sources
+  within about 7 seconds. When they start again they come back, enabled.
+
+### Check it without a streamer
+
+Before anyone arrives, publish a test pattern to the proxy from the OBS machine:
+
+```
+ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -c:v libx264 -preset veryfast \
+       -tune zerolatency -g 30 -f flv rtmp://127.0.0.1:1935/test
+```
+
+Within 30 seconds `test` appears in the API and in OBS. Stop it with Ctrl+C.
+
+### If their stream does not show up
+
+| What you see | What it means |
+|---|---|
+| `GET /streams` does not list their key | Nothing reached MediaMTX. Wrong IP, wrong port, key misspelled, or Windows Firewall blocking 1935 |
+| It is in the API but not in OBS | Wait a full 30 seconds. If it is still missing, check the proxy window for a sync error |
+| Two entries that look like the same person | Case or spelling difference. Disable the stray one with the API, or ask them to align their keys |
+| Their stream keeps dropping | Duplicate key. See the first rule above |
 
 ## While it is running
 

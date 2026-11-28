@@ -100,6 +100,8 @@ Everything runs on the OBS machine as two native binaries. No Docker, no WSL, no
 
 **[Full Windows runbook: resources/windows/README.md](resources/windows/README.md)** covers the OBS settings, the `.env` values, the first run, how the rotation behaves, and troubleshooting.
 
+Streamers publish RTMP to `rtmp://<proxy-machine>:1935/<name>` from their own encoder, and that name becomes the source name and on-screen label. The runbook covers the encoder settings and the naming rules.
+
 The short version of what has to be right:
 
 1. **OBS WebSocket server enabled**, Tools > WebSocket Server Settings, port 4455. Authentication is optional; if it is off, leave `OBS_WEBSOCKET_PASSWORD` empty.
