@@ -19,21 +19,23 @@ MediaMTX version that was packaged with it.
 
 ## What CI does
 
-Two systems, split by what each can actually do.
+Everything runs on GitHub Actions. There is no Drone pipeline.
 
-**GitHub Actions** (`.github/workflows/windows.yml`) owns everything Windows and
-the release, because its `windows-latest` runner can execute the binary:
+**`ci.yml`** — Linux: `golangci-lint` at the version the repo has always used,
+`go test -race ./...`, and the Docker image. The image is built on pull requests
+for validation and pushed only from `main` and tags, tagged `latest` on `main`
+and semver on tags.
+
+**`windows.yml`** — Windows and the release, because only a Windows runner can
+execute the binary:
 
 1. `go vet` and `go test ./...` on Windows
 2. builds `stream-proxy.exe` for windows/amd64
 3. **runs it**: with nothing on the MediaMTX address it must print its version,
-   refuse to start and exit 1. That is the check a Linux container cannot make
+   refuse to start and exit 1
 4. packages the bundle on Linux with `resources/windows/build-bundle.sh`, so the
    packaging path is exercised on every push to main
 5. on tags, attaches the zip and its `.sha256` to a **draft** release
-
-**Drone** keeps what it already did: lint, the Linux test run, and the Docker
-image push on main and tags.
 
 Nothing is published automatically. The draft is yours to check, describe and
 publish.
@@ -41,8 +43,8 @@ publish.
 ## What a person does
 
 1. Push a tag: `git tag v0.2.0 && git push origin v0.2.0`
-2. Wait for the Drone build to go green, and for "Windows bundle built, draft
-   release ready" in Discord.
+2. Wait for the Actions run to go green. The workflow called `windows` builds
+   the bundle and creates the draft.
 3. Open the draft release, confirm the asset is attached and its size is around
    25 MB.
 4. Write the notes: what changed, and anything that has to be done on upgrade.
@@ -51,13 +53,13 @@ publish.
 
 ## Required settings
 
-GitHub Actions needs no secrets: the draft release uses the workflow's own
-`GITHUB_TOKEN` with `contents: write`, declared in the workflow.
+No secret is needed for linting, testing, the Windows build or the draft
+release: the release uses the workflow's own `GITHUB_TOKEN` with
+`contents: write`.
 
-Drone still needs its existing `dockerhub_username`, `dockerhub_token` and
-`discord_webhook_url` secrets for the image push and notifications. The Windows
-workflow is deliberately independent of them, so a missing Drone secret cannot
-block a Windows build.
+The Docker image push needs repository secrets `DOCKERHUB_USERNAME` and
+`DOCKERHUB_TOKEN`. Until they exist the image job builds the image, skips the
+push and shows a warning, so the rest of the pipeline stays green.
 
 ## Building and releasing by hand
 
