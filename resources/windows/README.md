@@ -341,6 +341,58 @@ OBS still has to be running for anything to happen. Start OBS first, or let the 
 | Exits at startup with a database error | The folder is not writable. Move it out of `Program Files` |
 | MediaMTX exits with `bind: An attempt was made to access a socket in a way forbidden by its access permissions` | Windows has reserved the port. Not a permissions problem with the file, and not something unblocking the exe fixes. See below |
 
+### Nobody can push streams to this machine
+
+The proxy window is clean, nothing appears in `GET /streams`, and streamers
+report that `rtmp://<this-machine>:1935` times out.
+
+A timeout is not the same as "connection refused". A closed port on the same
+subnet answers with a reset. A timeout means the packets are being dropped
+before they reach the program, and Windows Firewall drops by default. If
+MediaMTX were not running, or were on another port, you would get refused
+instead.
+
+**1. Confirm MediaMTX is listening on every interface, not just loopback:**
+
+```
+netstat -ano | findstr :1935
+```
+
+Expect `0.0.0.0:1935`. `127.0.0.1:1935` means nothing external can reach it.
+
+**2. Allow the port, from an admin prompt.** This adds a rule for every network
+profile, which matters because rules created by the first-run prompt only cover
+the profile that was active at the time:
+
+```
+netsh advfirewall firewall add rule name="MediaMTX RTMP" dir=in action=allow protocol=TCP localport=1935 profile=any
+netsh advfirewall firewall add rule name="Stream Proxy API" dir=in action=allow protocol=TCP localport=8080 profile=any
+```
+
+**3. Check which profile Windows thinks the LAN is:**
+
+```powershell
+Get-NetConnectionProfile
+```
+
+If `NetworkCategory` is `Public`, Windows treats the LAN as hostile and inbound
+rules for apps do not apply. Set it to Private:
+
+```powershell
+Set-NetConnectionProfile -InterfaceAlias "Ethernet" -NetworkCategory Private
+```
+
+**4. Rule exists but the app is still blocked.** Windows matches rules to the
+executable's full path. If the exe was ever run from a different folder, or the
+folder was copied or unzipped again, the old rule points somewhere that no
+longer exists and the new copy is blocked without a prompt. List what is there:
+
+```
+netsh advfirewall firewall show rule name=all | findstr /i "mediamtx stream-proxy"
+```
+
+and delete anything pointing at an old path before adding the rules above.
+
 ### MediaMTX cannot open its port
 
 Windows reserves blocks of TCP ports for Hyper-V, WSL and Docker. If a port
