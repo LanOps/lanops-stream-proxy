@@ -41,7 +41,7 @@ mv "${work}/LICENSE" "${OUT_DIR}/MEDIAMTX-LICENSE.txt"
 
 cp "${REPO_ROOT}/resources/windows/mediamtx.yml" \
 	"${REPO_ROOT}/resources/windows/start.cmd" \
-	"${REPO_ROOT}/resources/windows/README.txt" \
+	"${REPO_ROOT}/resources/windows/README.md" \
 	"${OUT_DIR}/"
 cp "${REPO_ROOT}/resources/windows/.env.example" "${OUT_DIR}/.env"
 

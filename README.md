@@ -98,9 +98,17 @@ docker run -d \
 
 Everything runs on the OBS machine as two native binaries. No Docker, no WSL, no port forwarding. The proxy has no cgo dependencies, so it builds anywhere Go runs and needs no C compiler.
 
+**[Full Windows runbook: resources/windows/README.md](resources/windows/README.md)** covers the OBS settings, the `.env` values, the first run, how the rotation behaves, and troubleshooting.
+
+The short version of what has to be right:
+
+1. **OBS WebSocket server enabled**, Tools > WebSocket Server Settings, port 4455. Authentication is optional; if it is off, leave `OBS_WEBSOCKET_PASSWORD` empty.
+2. **Canvas set to 1920x1080.** Media sources are scaled to a 1920x1080 box and the name label is placed at 102,47, so any other canvas size crops or misplaces them.
+3. **The `Proxy Scenes` scene on air.** The proxy creates it and fills it but never switches to it. Make it the program scene, or add it as a nested Scene source.
+
 ### The bundle
 
-`resources/windows/build-bundle.sh` assembles one zip: the proxy built for windows/amd64, the pinned MediaMTX release, a MediaMTX config with only the API and RTMP enabled, a `.env` with a generated API password, `start.cmd` and `README.txt`.
+`resources/windows/build-bundle.sh` assembles one zip: the proxy built for windows/amd64, the pinned MediaMTX release with its licence, a MediaMTX config with only the API and RTMP enabled, a `.env` with a generated API password, `start.cmd` and the runbook.
 
 ```bash
 ./resources/windows/build-bundle.sh
@@ -118,26 +126,6 @@ $env:GOOS = "windows"
 $env:GOARCH = "amd64"
 go build -ldflags="-s -w" -o stream-proxy.exe ./cmd/stream-proxy
 ```
-
-### OBS
-
-The proxy drives OBS over obs-websocket. OBS 28 and newer has it built in; on 27 or older install the obs-websocket 5.x plugin.
-
-1. **Enable the WebSocket server.** Tools > WebSocket Server Settings, tick "Enable WebSocket server", leave the port at 4455. Authentication is optional. If you enable it, put the same password in `OBS_WEBSOCKET_PASSWORD`; if you leave it off, leave that value empty.
-2. **Set the canvas to 1920x1080.** Settings > Video > Base (Canvas) Resolution. The proxy scales every media source to fit a 1920x1080 box and places the stream name at 102,47. On a 1280x720 canvas the sources are larger than the canvas and get cropped; on 2560x1440 they sit in the top left corner. Output resolution is irrelevant.
-3. **Put the proxy scene on air.** On first run the proxy creates a scene called `Proxy Scenes` and adds its sources there, but it never switches to it. Either make `Proxy Scenes` the program scene, or add it to your own layout with Add Source > Scene > `Proxy Scenes`.
-
-Step 3 is the one that gets missed. Without it the proxy runs correctly and nothing appears on stream.
-
-### Operating notes
-
-- The proxy creates two sources per stream, `media_source-<name>` and `text-<name>`, hidden. Do not rename or delete them. It recreates missing ones, but the fade filters are looked up by name.
-- Stay on one scene collection for the event. The scene UUID is resolved when the proxy connects.
-- Every enabled stream is a live decode inside OBS, running whether or not it is visible. Ten enabled streams is ten concurrent decodes. Turn off the ones you are not showing with the API.
-- Streams are enabled as they appear, so anything pushed to MediaMTX joins the rotation within 30 seconds. The first one becomes visible when the rotation runs; sources are added on a 7 second cycle, rotation on a 30 second one.
-- Windows Firewall will ask about `mediamtx.exe` on 1935 and `stream-proxy.exe` on 8080. Allow both. The 1935 rule is what lets other machines push streams.
-
-`resources/windows/README.txt` is the operator version of this, with troubleshooting, and ships inside the bundle.
 
 ## RTMP Stream Generator
 
