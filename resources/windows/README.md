@@ -293,30 +293,46 @@ OBS still has to be running for anything to happen. Start OBS first, or let the 
 
 ### MediaMTX cannot open its port
 
-Windows reserves blocks of TCP ports for Hyper-V, WSL and Docker. If 1935 falls
-inside one of those blocks, nothing can listen on it and MediaMTX exits at
-startup. The message Windows gives is misleading: it reads like a file
+Windows reserves blocks of TCP ports for Hyper-V, WSL and Docker. If a port
+falls inside one of those blocks, nothing can listen on it and MediaMTX exits
+at startup. The message Windows gives is misleading: it reads like a file
 permission problem, but changing the file's permissions does nothing.
 
-Check what holds the port, and what is reserved around it, in an admin Command
+MediaMTX opens two ports, and either can hit this:
+
+| Port | What it is | Where it is set |
+|---|---|---|
+| 1935 | RTMP, where streamers publish | `rtmpAddress` in `mediamtx.yml`, `MEDIAMTX_RTMP_ADDRESS` in `.env` |
+| 9997 | the API the proxy polls | `apiAddress` in `mediamtx.yml`, `MEDIAMTX_API_ADDRESS` in `.env` |
+
+Read which port MediaMTX named in its error, then check it in an admin Command
 Prompt:
 
 ```
-netstat -ano | findstr :1935
+netstat -ano | findstr :9997
 netsh int ipv4 show excludedportrange protocol=tcp
 ```
 
-If `netstat` shows a PID, something is already using 1935. If the second command
-shows a range covering 1935, Windows reserved it. Either reserve the port for
-MediaMTX yourself, which needs an admin prompt:
+If `netstat` shows a PID, something else is using the port. If the second
+command shows a range covering it, Windows reserved it. Either reserve the port
+for MediaMTX yourself, which needs an admin prompt:
 
 ```
 net stop winnat
-netsh int ipv4 add excludedportrange protocol=tcp startport=1935 numberofports=1
+netsh int ipv4 add excludedportrange protocol=tcp startport=9997 numberofports=1
 net start winnat
 ```
 
-or move MediaMTX off the contested port. Three places have to agree:
+or move that one port. Moving the **API** port is the smaller change, because
+nothing outside this folder refers to it:
+
+```
+mediamtx.yml        apiAddress: 127.0.0.1:1936
+.env                MEDIAMTX_API_ADDRESS=127.0.0.1:1936
+```
+
+Moving the **RTMP** port also changes what the streamers type, so three places
+have to agree:
 
 ```
 mediamtx.yml        rtmpAddress: :1936
@@ -324,10 +340,9 @@ mediamtx.yml        rtmpAddress: :1936
 the streamers        rtmp://<this-machine>:1936/<key>
 ```
 
-The Windows Firewall rule follows the port, so it will ask again for 1936. The
-API port can be moved the same way with `apiAddress` and
-`MEDIAMTX_API_ADDRESS`, though 9997 is only bound to 127.0.0.1 and rarely
-contested.
+`start.cmd` reads the API port out of `MEDIAMTX_API_ADDRESS` when it checks that
+MediaMTX came up, so it follows whichever port you choose. The Windows Firewall
+rule follows the RTMP port, so moving that one asks again.
 
 ## Building the bundle yourself
 
