@@ -365,7 +365,19 @@ before they reach the program, and Windows Firewall drops by default. If
 MediaMTX were not running, or were on another port, you would get refused
 instead.
 
-**0. Confirm MediaMTX is running at all.** A MediaMTX that could not bind its
+**0. Check nothing else is holding the port.** Two processes listening on the
+same port silently split incoming connections: you get a port that says
+LISTENING, a service that logs nothing, and a client that cannot connect.
+
+```
+netstat -ano | findstr ":1935"
+```
+
+Every line should show the same PID. More than one means a leftover from an
+earlier attempt, or a `netsh interface portproxy` rule hosted by `svchost.exe`.
+The section on MediaMTX failing to bind covers identifying and removing both.
+
+**1. Confirm MediaMTX is running at all.** A MediaMTX that could not bind its
 API port exits, and its window is minimised, so the proxy can still be up while
 nothing is listening on 1935. Start it in a normal console to read the error
 rather than a minimised one:
@@ -374,7 +386,7 @@ rather than a minimised one:
 mediamtx.exe mediamtx.yml
 ```
 
-**1. Confirm it is listening on every interface, not just loopback:**
+**2. Confirm it is listening on every interface, not just loopback:**
 
 ```
 netstat -ano | findstr ":1935 :1936 :9997"
@@ -384,7 +396,7 @@ Expect `0.0.0.0:1935` for RTMP and `127.0.0.1:<api port>` for the API both
 listed against `mediamtx.exe`. Nothing at all on the RTMP port means the
 service is not running, and no amount of firewall work will help.
 
-**2. Allow the port, from an admin prompt.** This adds a rule for every network
+**3. Allow the port, from an admin prompt.** This adds a rule for every network
 profile, which matters because rules created by the first-run prompt only cover
 the profile that was active at the time:
 
@@ -393,7 +405,7 @@ netsh advfirewall firewall add rule name="MediaMTX RTMP" dir=in action=allow pro
 netsh advfirewall firewall add rule name="Stream Proxy API" dir=in action=allow protocol=TCP localport=8080 profile=any
 ```
 
-**3. Check which profile Windows thinks the LAN is:**
+**4. Check which profile Windows thinks the LAN is:**
 
 ```powershell
 Get-NetConnectionProfile
@@ -406,7 +418,7 @@ rules for apps do not apply. Set it to Private:
 Set-NetConnectionProfile -InterfaceAlias "Ethernet" -NetworkCategory Private
 ```
 
-**4. Rule exists but the app is still blocked.** Windows matches rules to the
+**5. Rule exists but the app is still blocked.** Windows matches rules to the
 executable's full path. If the exe was ever run from a different folder, or the
 folder was copied or unzipped again, the old rule points somewhere that no
 longer exists and the new copy is blocked without a prompt. List what is there:
@@ -419,10 +431,17 @@ and delete anything pointing at an old path before adding the rules above.
 
 ### MediaMTX cannot open its port
 
-Windows reserves blocks of TCP ports for Hyper-V, WSL and Docker. If a port
-falls inside one of those blocks, nothing can listen on it and MediaMTX exits
-at startup. The message Windows gives is misleading: it reads like a file
-permission problem, but changing the file's permissions does nothing.
+MediaMTX exits at startup with:
+
+```
+listen tcp 127.0.0.1:9997: bind: An attempt was made to access a socket in a way forbidden by its access permissions
+```
+
+That message reads like a file permission problem. It is not, and running as
+administrator does not help. On Windows that error (`WSAEACCES`) is what you get
+when **the port is already held by something else**, not when the exe lacks
+rights. Windows reports "already in use" this way often enough that it wastes
+people's evenings.
 
 MediaMTX opens two ports, and either can hit this:
 
@@ -431,31 +450,47 @@ MediaMTX opens two ports, and either can hit this:
 | 9997 | the API the proxy polls | `apiAddress` in `mediamtx.yml`, `MEDIAMTX_API_ADDRESS` in `.env` |
 | 1935 | RTMP, where streamers publish | `rtmpAddress` in `mediamtx.yml`, `MEDIAMTX_RTMP_ADDRESS` in `.env` |
 
-**MediaMTX reads `mediamtx.yml` and nothing else.** Changing
-`MEDIAMTX_API_ADDRESS` in `.env` does not move MediaMTX's port, it only tells the
-proxy where to look. Move one without the other and MediaMTX keeps trying the
-old port while the proxy asks the new one, which looks like a dead service. Both
-lines go together:
-
-```
-mediamtx.yml   apiAddress: 127.0.0.1:<port>
-.env           MEDIAMTX_API_ADDRESS=127.0.0.1:<port>
-```
-
-A mismatch shows up in the proxy window as `Cannot reach the MediaMTX API at
-<address>`, which names the address it tried.
-
-Read which port MediaMTX named in its error, then check it in an admin Command
-Prompt:
+**Find what is holding it**, in an admin Command Prompt, using the port from
+MediaMTX's error:
 
 ```
 netstat -ano | findstr :9997
+```
+
+Any line comes back with a PID. Name it:
+
+```powershell
+Get-Process -Id <pid> | Select-Object Id, ProcessName, Path, StartTime
+```
+
+What that PID is tells you what to do:
+
+- **`svchost.exe`** is almost always IP Helper, which hosts `netsh interface
+  portproxy` rules. Someone forwarded the port once, probably while trying WSL,
+  and the rule outlived the reason. List and delete them:
+
+  ```
+  netsh interface portproxy show all
+  netsh interface portproxy delete v4tov4 listenport=<port> listenaddress=0.0.0.0
+  ```
+
+  Use the `listenaddress` that `show all` prints.
+
+- **Another `mediamtx.exe`**, often from a different folder, is a second copy
+  still running from an earlier attempt. Close it, or
+  `Stop-Process -Id <pid> -Force`.
+
+- **Anything else** owns that port legitimately. Move MediaMTX, below.
+
+**If nothing is holding it**, the port may be inside a range Windows reserves
+for Hyper-V, WSL or Docker:
+
+```
 netsh int ipv4 show excludedportrange protocol=tcp
 ```
 
-If `netstat` shows a PID, something else is using the port. If the second
-command shows a range covering it, Windows reserved it. Either reserve the port
-for MediaMTX yourself, which needs an admin prompt:
+If a range covers it, either reserve the port for MediaMTX first, from an admin
+prompt:
 
 ```
 net stop winnat
@@ -463,14 +498,21 @@ netsh int ipv4 add excludedportrange protocol=tcp startport=9997 numberofports=1
 net start winnat
 ```
 
-or move that one port. Moving the **API** port is the smaller change, because
-nothing outside this folder refers to it. Change both lines to the new port and
-leave everything else alone:
+or move it. Moving the **API** port is the smaller change, because nothing
+outside this folder refers to it. Change both lines and leave everything else
+alone:
 
 ```
 mediamtx.yml        apiAddress: 127.0.0.1:<port>
 .env                MEDIAMTX_API_ADDRESS=127.0.0.1:<port>
 ```
+
+**MediaMTX reads `mediamtx.yml` and nothing else.** Changing
+`MEDIAMTX_API_ADDRESS` in `.env` does not move MediaMTX's port, it only tells the
+proxy where to look. Move one without the other and MediaMTX keeps trying the
+old port while the proxy asks the new one, which looks like a dead service. A
+mismatch shows up in the proxy window as `Cannot reach the MediaMTX API at
+<address>`.
 
 Moving the **RTMP** port also changes what the streamers type, so three places
 have to agree:
