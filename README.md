@@ -117,7 +117,7 @@ Each streamer points their own encoder at the proxy machine. In OBS, Settings > 
 | Setting | Value |
 |---|---|
 | Service | `Custom...` |
-| Server | `rtmp://<proxy-machine-lan-ip>:1935` |
+| Server | `rtmp://<proxy-machine-lan-ip>` |
 | Stream Key | their stream name, for example `cam1` |
 
 Then Start Streaming. Nothing to install, and any RTMP client works: Streamlabs, vMix, Larix on a phone, or ffmpeg.

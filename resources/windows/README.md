@@ -259,9 +259,13 @@ only needs three things.
 
 ```
 Service     Custom...
-Server      rtmp://<proxy-machine-lan-ip>:1935
+Server      rtmp://<proxy-machine-lan-ip>
 Stream Key  cam1
 ```
+
+The port is left off because 1935 is RTMP's default, so the server is just the
+machine. If MediaMTX's RTMP port has been changed from 1935, they need
+`rtmp://<proxy-machine-lan-ip>:<port>` instead.
 
 Replace the stream key with their own name. Then **Start Streaming**. Nothing else needs changing, and they do not need to
 install anything.
@@ -271,7 +275,7 @@ phone, or ffmpeg:
 
 ```
 ffmpeg -re -i input.mp4 -c:v libx264 -preset veryfast -tune zerolatency \
-       -g 30 -f flv rtmp://<proxy-machine-lan-ip>:1935/cam1
+       -g 30 -f flv rtmp://<proxy-machine-lan-ip>/cam1
 ```
 
 ### The stream key is the stream name
