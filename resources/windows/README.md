@@ -77,6 +77,7 @@ A first run against an empty OBS looks like this (trimmed, lines can interleave)
 INF Loading API
 INF Initializing Stream Proxy
 INF Loading Config
+INF Waiting for MediaMTX
 INF Waiting for OBS
 INF OBS Scene doesn't exist. Creating...
 INF OBS Scene created!
@@ -91,7 +92,15 @@ INF Stream Found! Adding cam2 to the DB
 INF Adding stream cam2 to OBS
 ```
 
-`Waiting for OBS` repeating every 5 seconds means it cannot reach OBS. Check OBS is running, the WebSocket server is enabled, the port and password match. It keeps retrying rather than exiting, so you can fix OBS and watch it connect.
+`Waiting for MediaMTX` followed by errors means the proxy cannot reach MediaMTX's
+API. It retries four times over about 20 seconds and then exits, so a broken
+dependency stops the run instead of looking healthy. If MediaMTX failed to start,
+its own window is minimised in the taskbar with the reason.
+
+`Waiting for OBS` repeating every 5 seconds means it cannot reach OBS. Check OBS
+is running, the WebSocket server is enabled, the port and password match. That one
+keeps retrying rather than exiting, because OBS is opened by a person and may
+come up a minute after the stack.
 
 After the first minute the window is quiet. It has nothing to say unless something changes or breaks.
 
@@ -389,7 +398,7 @@ mediamtx.exe mediamtx.yml
 **2. Confirm it is listening on every interface, not just loopback:**
 
 ```
-netstat -ano | findstr ":1935 :1936 :9997"
+netstat -ano | findstr ":1935 :9997"
 ```
 
 Expect `0.0.0.0:1935` for RTMP and `127.0.0.1:<api port>` for the API both

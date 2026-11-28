@@ -106,6 +106,10 @@ The short version of what has to be right:
 2. **Canvas set to 1920x1080.** Media sources are scaled to a 1920x1080 box and the name label is placed at 102,47, so any other canvas size crops or misplaces them.
 3. **The `Proxy Scenes` scene on air.** The proxy creates it and fills it but never switches to it. Make it the program scene, or add it as a nested Scene source.
 
+The proxy refuses to start if it cannot reach MediaMTX's API, so a missing or
+misconfigured backend stops the run instead of looking healthy. It waits for OBS
+indefinitely, because OBS is opened by a person.
+
 ### Streamers
 
 Each streamer points their own encoder at the proxy machine. In OBS, Settings > Stream:
