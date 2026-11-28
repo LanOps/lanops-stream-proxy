@@ -66,7 +66,7 @@ All endpoints use HTTP basic auth with `API_ADMIN_USERNAME` / `API_ADMIN_PASSWOR
 | `API_ADMIN_PASSWORD`     | Password to access the API.               |
 | `API_PORT`               | Port to expose the API.                   |
 
-Every variable is required and the process exits at startup if one is missing.
+Every variable is required and the process exits at startup if one is missing, except `OBS_WEBSOCKET_PASSWORD`, which can be empty when auth is turned off in OBS.
 
 ## Docker
 
@@ -93,6 +93,42 @@ docker run -d \
 ```
 
 `--network host` is required for the default `127.0.0.1` addresses to resolve to the host rather than the container.
+
+## Windows
+
+The proxy has no cgo dependencies, so it builds anywhere Go runs and needs no C compiler.
+
+```powershell
+cd src
+$env:CGO_ENABLED = "0"
+$env:GOOS = "windows"
+$env:GOARCH = "amd64"
+go build -ldflags="-s -w" -o stream-proxy.exe ./cmd/stream-proxy
+```
+
+Running it on the OBS machine needs three files in one folder:
+
+1. `stream-proxy.exe` (built above)
+2. `mediamtx.exe` from the [MediaMTX releases](https://github.com/bluenviron/mediamtx/releases) (`windows_amd64.zip`)
+3. `mediamtx.yml`, `.env` and `start.cmd` from `resources/windows` in this repo
+
+Then:
+
+```
+copy resources\windows\mediamtx.yml .
+copy resources\windows\start.cmd .
+copy resources\windows\.env.example .env
+notepad .env
+start.cmd
+```
+
+Both binaries bind to `127.0.0.1`, so OBS, the proxy and MediaMTX can all live on the same machine with no port forwarding:
+
+- OBS: Tools > WebSocket Server Settings, enable the server on port 4455. A password is optional
+- Windows Firewall will ask about `mediamtx.exe` on port 1935 and `stream-proxy.exe` on 8080. Allow both; the 1935 rule is what lets other machines push streams
+- `start.cmd` keeps the proxy in its own window so its log stays visible
+
+To start it with Windows, point Task Scheduler at `start.cmd` with "Run whether user is logged on or not" and the OBS machine's working directory.
 
 ## RTMP Stream Generator
 

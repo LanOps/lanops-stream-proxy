@@ -9,10 +9,11 @@ import (
 	"lanops/obs-proxy-bridge/internal/obs"
 
 	"os"
+	"runtime"
 	"time"
 
+	"github.com/glebarez/sqlite"
 	"github.com/rs/zerolog"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -33,7 +34,8 @@ var (
 
 func main() {
 	logger = zerolog.New(
-		zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339},
+		// cmd.exe does not interpret the ANSI escapes ConsoleWriter emits.
+		zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339, NoColor: runtime.GOOS == "windows"},
 	).Level(zerolog.TraceLevel).With().Timestamp().Caller().Logger()
 	logger.Info().Msg("Initializing Stream Proxy")
 

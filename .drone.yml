@@ -83,6 +83,14 @@ steps:
     commands:
       - cd /drone/src/src && go test -race ./...
 
+  # The proxy is deployed as a plain .exe on Windows, which only works while
+  # the build stays cgo-free. This fails the build if a cgo dependency sneaks
+  # back in, before anyone finds out at an event.
+  - name: build-windows
+    image: golang:1.23
+    commands:
+      - cd /drone/src/src && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o /tmp/stream-proxy-windows-amd64.exe ./cmd/stream-proxy
+
   - name: discord-test-success
     image: curlimages/curl:8.7.1
     failure: ignore

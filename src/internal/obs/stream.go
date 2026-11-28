@@ -159,13 +159,17 @@ func (client *Client) createStreamTextInput(stream dbstreams.Stream) (dbstreams.
 		"boundsType": "OBS_BOUNDS_NONE",
 		"enabled":    false,
 	}
+	textKind, err := client.getTextInputKind()
+	if err != nil {
+		return stream, err
+	}
 	params := goobRequestInputs.NewCreateInputParams().
 		WithSceneUuid(client.cfg.ObsProxySceneUuid).
 		WithInputName(fmt.Sprintf("text-%s", stream.Name)).
-		WithInputKind("text_ft2_source_v2").
+		WithInputKind(textKind).
 		WithInputSettings(inputSettings)
 	var resp *goobRequestInputs.CreateInputResponse
-	err := client.withObs(func(obs *goobs.Client) error {
+	err = client.withObs(func(obs *goobs.Client) error {
 		var err error
 		resp, err = obs.Inputs.CreateInput(params)
 		return err

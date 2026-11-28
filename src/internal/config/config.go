@@ -21,10 +21,9 @@ func Load() Config {
 	if obsWebSocketAddress == "" {
 		log.Fatal("❌ OBS_WEBSOCKET_ADDRESS not set in environment")
 	}
+	// OBS WebSocket auth can be turned off, in which case there is no
+	// password to supply. An empty value is valid here, unlike the rest.
 	obsWebSocketPassword := os.Getenv("OBS_WEBSOCKET_PASSWORD")
-	if obsWebSocketPassword == "" {
-		log.Fatal("❌ OBS_WEBSOCKET_PASSWORD not set in environment")
-	}
 	obsProxySceneName := os.Getenv("OBS_PROXY_SCENE_NAME")
 	if obsProxySceneName == "" {
 		log.Fatal("❌ OBS_PROXY_SCENE_NAME not set in environment")

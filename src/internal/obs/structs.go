@@ -20,6 +20,10 @@ type Client struct {
 	mu   sync.Mutex
 	conn *goobs.Client
 
+	// textKind is resolved once from OBS rather than hardcoded, because the
+	// available text source plugin differs between OBS builds.
+	textKind string
+
 	obsStreams struct {
 		current  *dbstreams.Stream
 		previous *dbstreams.Stream

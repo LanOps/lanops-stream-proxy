@@ -1,0 +1,21 @@
+# MediaMTX config for running alongside OBS on Windows.
+# Place next to mediamtx.exe and the stream proxy.
+
+logLevel: info
+
+# The proxy polls this to discover live streams.
+api: yes
+apiAddress: 127.0.0.1:9997
+
+# Streamers push here.
+rtmp: yes
+rtmpAddress: :1935
+
+# Everything else off, so Windows Firewall only asks about the ports in use.
+rtsp: no
+hls: no
+webrtc: no
+srt: no
+
+paths:
+  all_others:

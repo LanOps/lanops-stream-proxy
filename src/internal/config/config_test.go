@@ -56,6 +56,21 @@ func TestLoad_ObsProxySceneUuidNotLoaded(t *testing.T) {
 	}
 }
 
+func TestLoad_EmptyObsPasswordAllowed(t *testing.T) {
+	setAllEnvVars(t)
+	// Auth can be disabled in OBS, in which case there is no password.
+	t.Setenv("OBS_WEBSOCKET_PASSWORD", "")
+
+	cfg := Load()
+
+	if cfg.ObsWebSocketPassword != "" {
+		t.Errorf("expected empty password, got %q", cfg.ObsWebSocketPassword)
+	}
+	if cfg.ObsWebSocketAddress != "localhost:4455" {
+		t.Errorf("expected the rest of the config to still load, got %q", cfg.ObsWebSocketAddress)
+	}
+}
+
 func TestConfig_Struct(t *testing.T) {
 	cfg := Config{
 		DbPath:               "test.db",
