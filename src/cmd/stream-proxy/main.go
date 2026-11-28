@@ -49,7 +49,9 @@ func main() {
 	logger.Info().Msg("Loading Config")
 	cfg = config.Load()
 
-	db, err := gorm.Open(sqlite.Open(cfg.DbPath), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(cfg.DbPath), &gorm.Config{
+		Logger: dbstreams.NewQuietLogger(),
+	})
 	if err != nil {
 		logger.Fatal().Err(err).Msg("Failed Connecting to DB")
 	}
