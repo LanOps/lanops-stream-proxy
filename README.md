@@ -100,13 +100,27 @@ Everything runs on the OBS machine as two native binaries. No Docker, no WSL, no
 
 **[Full Windows runbook: resources/windows/README.md](resources/windows/README.md)** covers the OBS settings, the `.env` values, the first run, how the rotation behaves, and troubleshooting.
 
-Streamers publish RTMP to `rtmp://<proxy-machine>:1935/<name>` from their own encoder, and that name becomes the source name and on-screen label. The runbook covers the encoder settings and the naming rules.
-
 The short version of what has to be right:
 
 1. **OBS WebSocket server enabled**, Tools > WebSocket Server Settings, port 4455. Authentication is optional; if it is off, leave `OBS_WEBSOCKET_PASSWORD` empty.
 2. **Canvas set to 1920x1080.** Media sources are scaled to a 1920x1080 box and the name label is placed at 102,47, so any other canvas size crops or misplaces them.
 3. **The `Proxy Scenes` scene on air.** The proxy creates it and fills it but never switches to it. Make it the program scene, or add it as a nested Scene source.
+
+### Streamers
+
+Each streamer points their own encoder at the proxy machine. In OBS, Settings > Stream:
+
+| Setting | Value |
+|---|---|
+| Service | `Custom...` |
+| Server | `rtmp://<proxy-machine-lan-ip>:1935` |
+| Stream Key | their stream name, for example `cam1` |
+
+Then Start Streaming. Nothing to install, and any RTMP client works: Streamlabs, vMix, Larix on a phone, or ffmpeg.
+
+The stream key becomes the source name in OBS, the label on screen and the name in the API, so keep keys short and lowercase with no spaces or slashes. Two people on the same key kick each other off in a loop, and keys are case sensitive, so `cam1` and `Cam1` are two different streams.
+
+The [runbook](resources/windows/README.md) covers the rest: what happens between going live and appearing in OBS, a test pattern you can publish before anyone arrives, and what to check when a stream does not appear.
 
 ### The bundle
 

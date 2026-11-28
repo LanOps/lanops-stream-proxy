@@ -185,11 +185,13 @@ only needs three things.
 
 **Settings > Stream**
 
-- **Service**: `Custom...`
-- **Server**: `rtmp://<proxy-machine-lan-ip>:1935`
-- **Stream Key**: their stream name, for example `cam1`
+```
+Service     Custom...
+Server      rtmp://<proxy-machine-lan-ip>:1935
+Stream Key  cam1
+```
 
-Then **Start Streaming**. Nothing else needs changing, and they do not need to
+Replace the stream key with their own name. Then **Start Streaming**. Nothing else needs changing, and they do not need to
 install anything.
 
 Anything that can publish RTMP works the same way: Streamlabs, vMix, Larix on a
