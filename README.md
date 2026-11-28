@@ -137,7 +137,7 @@ The [runbook](resources/windows/README.md) covers the rest: what happens between
 
 It needs `go`, `curl`, `unzip` and `zip`, so run it in WSL, Git Bash or any Linux. Unzip the result on the OBS machine and run `start.cmd`. Nothing else to install.
 
-CI builds the same bundle from a tag and attaches it to a draft release; see [RELEASING.md](RELEASING.md) for the process, the version stamping and the one secret it needs. The version is printed at startup and recorded in `VERSION.txt` inside the bundle.
+GitHub Actions builds the same bundle, runs the Windows binary on a Windows runner, and attaches the zip to a draft release on a tag; see [RELEASING.md](RELEASING.md) for the process and the version stamping. The version is printed at startup and recorded in `VERSION.txt` inside the bundle.
 
 To build only the proxy:
 
