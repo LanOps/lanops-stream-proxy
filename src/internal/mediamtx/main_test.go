@@ -326,8 +326,32 @@ func TestSyncStreams_MediamtxDown(t *testing.T) {
 	if clientErr == nil {
 		t.Fatal("expected ClientError when mediamtx is unreachable")
 	}
-	if clientErr.Message != "Error pulling MediaMTX Proxy Streams" {
-		t.Errorf("unexpected error message: %s", clientErr.Message)
+	// The message has to name the address that failed, because the usual cause
+	// is mediamtx.yml and .env disagreeing about the API port rather than the
+	// service being down.
+	if !strings.Contains(clientErr.Message, "Cannot reach the MediaMTX API at") {
+		t.Errorf("expected the address in the message, got: %s", clientErr.Message)
+	}
+	if !strings.Contains(clientErr.Message, client.cfg.MediaMtxApiAddress) {
+		t.Errorf("expected %q in the message, got: %s", client.cfg.MediaMtxApiAddress, clientErr.Message)
+	}
+}
+
+// A wrong port that answers HTTP with something else must not surface as a JSON
+// parse error, which reads like a malformed MediaMTX response.
+func TestGetStreams_NonOKStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "nope", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client, _, _ := newTestClient(t, server.URL)
+	_, err := client.GetStreams()
+	if err == nil {
+		t.Fatal("expected an error for a 404 response")
+	}
+	if !strings.Contains(err.Error(), "unexpected HTTP 404") {
+		t.Errorf("expected the status in the error, got: %v", err)
 	}
 }
 

@@ -407,6 +407,20 @@ MediaMTX opens two ports, and either can hit this:
 | 9997 | the API the proxy polls | `apiAddress` in `mediamtx.yml`, `MEDIAMTX_API_ADDRESS` in `.env` |
 | 1935 | RTMP, where streamers publish | `rtmpAddress` in `mediamtx.yml`, `MEDIAMTX_RTMP_ADDRESS` in `.env` |
 
+**MediaMTX reads `mediamtx.yml` and nothing else.** Changing
+`MEDIAMTX_API_ADDRESS` in `.env` does not move MediaMTX's port, it only tells the
+proxy where to look. Move one without the other and MediaMTX keeps trying the
+old port while the proxy asks the new one, which looks like a dead service. Both
+lines go together:
+
+```
+mediamtx.yml   apiAddress: 127.0.0.1:<port>
+.env           MEDIAMTX_API_ADDRESS=127.0.0.1:<port>
+```
+
+A mismatch shows up in the proxy window as `Cannot reach the MediaMTX API at
+<address>`, which names the address it tried.
+
 Read which port MediaMTX named in its error, then check it in an admin Command
 Prompt:
 

@@ -23,9 +23,15 @@ func (client *Client) SyncStreams() *ClientError {
 	// Read Streams from MediaMTX
 	proxyStreamsList, err := client.GetStreams()
 	if err != nil {
+		// Name the address that was tried. The usual cause is mediamtx.yml and
+		// .env disagreeing about the API port, which looks like a dead service
+		// from here.
 		return &ClientError{
-			Err:     err,
-			Message: "Error pulling MediaMTX Proxy Streams",
+			Err: err,
+			Message: fmt.Sprintf(
+				"Cannot reach the MediaMTX API at %s. Check apiAddress in mediamtx.yml matches MEDIAMTX_API_ADDRESS in .env",
+				client.cfg.MediaMtxApiAddress,
+			),
 		}
 	}
 
@@ -91,6 +97,10 @@ func (client *Client) GetStreams() ([]MediamtxListStreamsOutput, error) {
 		return streams, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return streams, fmt.Errorf("unexpected HTTP %d from %s", resp.StatusCode, url)
+	}
 
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
