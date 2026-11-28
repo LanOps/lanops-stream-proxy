@@ -51,18 +51,30 @@ func (client *Client) createStreamSceneItemFadeSourceFilter(sourceUuid string) e
 	})
 }
 
+const (
+	// A changeover used to run 40 steps of 125ms against two sources, so 160
+	// filter updates per switch and 86% of everything the proxy sends, in
+	// bursts of about 34 requests a second. OBS re-evaluates the filter on a
+	// live source for each one.
+	//
+	// Fewer steps over the same 5 seconds cuts the total and the burst rate
+	// at once. Compressing the fade instead raises the burst rate, which is
+	// the opposite of what a machine that is already struggling needs.
+	fadeSteps    = 20
+	fadeDuration = 5 * time.Second
+)
+
 func (client *Client) setStreamSceneItemsFade(stream dbstreams.Stream, start, end float64) error {
-	steps := 40                                        // how many fade steps
-	interval := 5 * time.Second / time.Duration(steps) // delay between updates
-	for i := 0; i <= steps; i++ {
-		opacity := start + (end-start)*(float64(i)/float64(steps))
+	interval := fadeDuration / time.Duration(fadeSteps)
+	for i := 0; i <= fadeSteps; i++ {
+		opacity := start + (end-start)*(float64(i)/float64(fadeSteps))
 		filterSettings := map[string]interface{}{
 			"opacity": opacity,
 		}
 		filterName := "FadeFilter"
 
 		// One withObs per step so an incoming fade can run alongside an
-		// outgoing one instead of queueing behind all 40 steps.
+		// outgoing one instead of queueing behind the whole fade.
 		err := client.withObs(func(obs *goobs.Client) error {
 			// Media Source
 			mediaSourceName := fmt.Sprintf("media_source-%s", stream.Name)
@@ -99,6 +111,7 @@ func (client *Client) createStreamMediaSourceInput(stream dbstreams.Stream) (dbs
 		"restart_on_activate": false,
 		"reconnect":           true,
 		"buffering_mb":        4,
+		"close_when_inactive": client.cfg.ObsCloseWhenInactive,
 		"enabled":             false,
 	}
 	params := goobRequestInputs.NewCreateInputParams().
@@ -159,13 +172,17 @@ func (client *Client) createStreamTextInput(stream dbstreams.Stream) (dbstreams.
 		"boundsType": "OBS_BOUNDS_NONE",
 		"enabled":    false,
 	}
+	textKind, err := client.getTextInputKind()
+	if err != nil {
+		return stream, err
+	}
 	params := goobRequestInputs.NewCreateInputParams().
 		WithSceneUuid(client.cfg.ObsProxySceneUuid).
 		WithInputName(fmt.Sprintf("text-%s", stream.Name)).
-		WithInputKind("text_ft2_source_v2").
+		WithInputKind(textKind).
 		WithInputSettings(inputSettings)
 	var resp *goobRequestInputs.CreateInputResponse
-	err := client.withObs(func(obs *goobs.Client) error {
+	err = client.withObs(func(obs *goobs.Client) error {
 		var err error
 		resp, err = obs.Inputs.CreateInput(params)
 		return err

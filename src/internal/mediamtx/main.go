@@ -23,9 +23,15 @@ func (client *Client) SyncStreams() *ClientError {
 	// Read Streams from MediaMTX
 	proxyStreamsList, err := client.GetStreams()
 	if err != nil {
+		// Name the address that was tried. The usual cause is mediamtx.yml and
+		// .env disagreeing about the API port, which looks like a dead service
+		// from here.
 		return &ClientError{
-			Err:     err,
-			Message: "Error pulling MediaMTX Proxy Streams",
+			Err: err,
+			Message: fmt.Sprintf(
+				"Cannot reach the MediaMTX API at %s. Check apiAddress in mediamtx.yml matches MEDIAMTX_API_ADDRESS in .env",
+				client.cfg.MediaMtxApiAddress,
+			),
 		}
 	}
 
@@ -92,6 +98,10 @@ func (client *Client) GetStreams() ([]MediamtxListStreamsOutput, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return streams, fmt.Errorf("unexpected HTTP %d from %s", resp.StatusCode, url)
+	}
+
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -102,6 +112,16 @@ func (client *Client) GetStreams() ([]MediamtxListStreamsOutput, error) {
 	if err != nil {
 		return streams, err
 	}
-	streams = response.Items
+
+	// Only paths with a publisher are streams. MediaMTX also lists paths that
+	// exist in its config with nothing publishing to them, and they report
+	// ready:false. Treating those as live creates a media source that never
+	// connects, which the rotation then shows as a black frame.
+	streams = make([]MediamtxListStreamsOutput, 0, len(response.Items))
+	for _, item := range response.Items {
+		if item.Ready {
+			streams = append(streams, item)
+		}
+	}
 	return streams, nil
 }

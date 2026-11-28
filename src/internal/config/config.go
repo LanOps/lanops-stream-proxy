@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
@@ -21,9 +22,18 @@ func Load() Config {
 	if obsWebSocketAddress == "" {
 		log.Fatal("❌ OBS_WEBSOCKET_ADDRESS not set in environment")
 	}
+	// OBS WebSocket auth can be turned off, in which case there is no
+	// password to supply. An empty value is valid here, unlike the rest.
 	obsWebSocketPassword := os.Getenv("OBS_WEBSOCKET_PASSWORD")
-	if obsWebSocketPassword == "" {
-		log.Fatal("❌ OBS_WEBSOCKET_PASSWORD not set in environment")
+	// Media sources should stop decoding while they are not visible. Without
+	// this every stream the proxy knows about decodes at once, whether or not
+	// the rotation is showing it, which is what makes OBS crawl at an event
+	// with a lot of streamers. Optional, defaults to on.
+	obsCloseWhenInactive := true
+	if v := os.Getenv("OBS_CLOSE_WHEN_INACTIVE"); v != "" {
+		if parsed, err := strconv.ParseBool(v); err == nil {
+			obsCloseWhenInactive = parsed
+		}
 	}
 	obsProxySceneName := os.Getenv("OBS_PROXY_SCENE_NAME")
 	if obsProxySceneName == "" {
@@ -59,6 +69,7 @@ func Load() Config {
 		ObsWebSocketAddress:  obsWebSocketAddress,
 		ObsWebSocketPassword: obsWebSocketPassword,
 		ObsProxySceneName:    obsProxySceneName,
+		ObsCloseWhenInactive: obsCloseWhenInactive,
 		MediaMtxApiAddress:   mediaMtxApiAddress,
 		MediaMtxRtmpAddress:  mediaMtxRtmpAddress,
 		ApiAdminUsername:     apiAdminUsername,

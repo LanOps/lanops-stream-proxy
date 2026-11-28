@@ -66,7 +66,7 @@ All endpoints use HTTP basic auth with `API_ADMIN_USERNAME` / `API_ADMIN_PASSWOR
 | `API_ADMIN_PASSWORD`     | Password to access the API.               |
 | `API_PORT`               | Port to expose the API.                   |
 
-Every variable is required and the process exits at startup if one is missing.
+Every variable is required and the process exits at startup if one is missing, except `OBS_WEBSOCKET_PASSWORD`, which can be empty when auth is turned off in OBS.
 
 ## Docker
 
@@ -93,6 +93,59 @@ docker run -d \
 ```
 
 `--network host` is required for the default `127.0.0.1` addresses to resolve to the host rather than the container.
+
+## Windows
+
+Everything runs on the OBS machine as two native binaries. No Docker, no WSL, no port forwarding. The proxy has no cgo dependencies, so it builds anywhere Go runs and needs no C compiler.
+
+**[Full Windows runbook: resources/windows/README.md](resources/windows/README.md)** covers the OBS settings, the `.env` values, the first run, how the rotation behaves, and troubleshooting.
+
+The short version of what has to be right:
+
+1. **OBS WebSocket server enabled**, Tools > WebSocket Server Settings, port 4455. Authentication is optional; if it is off, leave `OBS_WEBSOCKET_PASSWORD` empty.
+2. **Canvas set to 1920x1080.** Media sources are scaled to a 1920x1080 box and the name label is placed at 102,47, so any other canvas size crops or misplaces them.
+3. **The `Proxy Scenes` scene on air.** The proxy creates it and fills it but never switches to it. Make it the program scene, or add it as a nested Scene source.
+
+The proxy refuses to start if it cannot reach MediaMTX's API, so a missing or
+misconfigured backend stops the run instead of looking healthy. It waits for OBS
+indefinitely, because OBS is opened by a person.
+
+### Streamers
+
+Each streamer points their own encoder at the proxy machine. In OBS, Settings > Stream:
+
+| Setting | Value |
+|---|---|
+| Service | `Custom...` |
+| Server | `rtmp://<proxy-machine-lan-ip>:1935` |
+| Stream Key | their stream name, for example `cam1` |
+
+Then Start Streaming. Nothing to install, and any RTMP client works: Streamlabs, vMix, Larix on a phone, or ffmpeg.
+
+The stream key becomes the source name in OBS, the label on screen and the name in the API, so keep keys short and lowercase with no spaces or slashes. Two people on the same key kick each other off in a loop, and keys are case sensitive, so `cam1` and `Cam1` are two different streams.
+
+The [runbook](resources/windows/README.md) covers the rest: what happens between going live and appearing in OBS, a test pattern you can publish before anyone arrives, and what to check when a stream does not appear.
+
+### The bundle
+
+`resources/windows/build-bundle.sh` assembles one zip: the proxy built for windows/amd64, the pinned MediaMTX release with its licence, a MediaMTX config with only the API and RTMP enabled, a `.env` with a generated API password, `start.cmd` and the runbook.
+
+```bash
+./resources/windows/build-bundle.sh
+# dist/lanops-stream-proxy-windows.zip
+```
+
+It needs `go`, `curl`, `unzip` and `zip`, so run it in WSL, Git Bash or any Linux. Unzip the result on the OBS machine and run `start.cmd`. Nothing else to install.
+
+To build only the proxy:
+
+```powershell
+cd src
+$env:CGO_ENABLED = "0"
+$env:GOOS = "windows"
+$env:GOARCH = "amd64"
+go build -ldflags="-s -w" -o stream-proxy.exe ./cmd/stream-proxy
+```
 
 ## RTMP Stream Generator
 

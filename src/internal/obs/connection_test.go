@@ -24,6 +24,10 @@ type fakeOBS struct {
 	mu    sync.Mutex
 	conns int
 	live  []*websocket.Conn
+
+	// inputKinds is what GetInputKindList reports. Defaults to a build with
+	// the FreeType2 text source.
+	inputKinds []string
 }
 
 // drop kills the server side of every open connection, the way OBS closing
@@ -97,6 +101,12 @@ func (f *fakeOBS) serve(w http.ResponseWriter, r *http.Request) {
 		switch req.RequestType {
 		case "GetVersion":
 			data["responseData"] = map[string]interface{}{"obsVersion": "30.2.3", "rpcVersion": 1}
+		case "GetInputKindList":
+			kinds := f.inputKinds
+			if kinds == nil {
+				kinds = []string{"ffmpeg_source", "text_ft2_source_v2"}
+			}
+			data["responseData"] = map[string]interface{}{"inputKinds": kinds}
 		case "GetSceneList":
 			data["responseData"] = map[string]interface{}{
 				"currentProgramSceneName": "Proxy Scenes",

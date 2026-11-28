@@ -11,7 +11,7 @@ import (
 	"lanops/obs-proxy-bridge/internal/config"
 	"lanops/obs-proxy-bridge/internal/dbstreams"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -85,14 +85,59 @@ func TestGetStreams_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(streams) != 2 {
-		t.Fatalf("expected 2 streams, got %d", len(streams))
+	// stream-b is not ready, which is what a path defined in mediamtx.yml with
+	// nothing publishing to it looks like.
+	if len(streams) != 1 {
+		t.Fatalf("expected 1 stream, got %d", len(streams))
 	}
 	if streams[0].Name != "stream-a" {
 		t.Errorf("expected 'stream-a', got %s", streams[0].Name)
 	}
-	if streams[1].Name != "stream-b" {
-		t.Errorf("expected 'stream-b', got %s", streams[1].Name)
+}
+
+// A configured path with no publisher must never become a stream. MediaMTX
+// lists it with ready:false and a null source, and treating it as live puts a
+// media source in OBS that can never connect, which the rotation then shows as
+// a black frame.
+func TestGetStreams_IgnoresPathsWithoutAPublisher(t *testing.T) {
+	response := MediamtxListStreamsResponse{
+		ItemCount: 2,
+		PageCount: 1,
+		Items: []MediamtxListStreamsOutput{
+			{Name: "stage-cam", ConfName: "stage-cam", Ready: false},
+			{Name: "cam1", ConfName: "all_others", Ready: true},
+		},
+	}
+	server := serveJSON(t, response)
+	defer server.Close()
+
+	client, _, _ := newTestClient(t, server.URL)
+	streams, err := client.GetStreams()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(streams) != 1 || streams[0].Name != "cam1" {
+		t.Fatalf("expected only cam1, got %+v", streams)
+	}
+}
+
+// SyncStreams must not add a DB row for an unready path.
+func TestSyncStreams_IgnoresUnreadyPaths(t *testing.T) {
+	response := MediamtxListStreamsResponse{
+		Items: []MediamtxListStreamsOutput{
+			{Name: "stage-cam", Ready: false},
+		},
+	}
+	server := serveJSON(t, response)
+	defer server.Close()
+
+	client, _, dbClient := newTestClient(t, server.URL)
+	if clientErr := client.SyncStreams(); clientErr != nil {
+		t.Fatalf("unexpected error: %v", clientErr.Err)
+	}
+	exists, _ := dbClient.CheckStreamExistsByName("stage-cam")
+	if exists {
+		t.Error("expected the unready path not to be added to the DB")
 	}
 }
 
@@ -160,8 +205,8 @@ func TestGetStreams_CorrectPath(t *testing.T) {
 func TestSyncStreams_AddsNewStreams(t *testing.T) {
 	response := MediamtxListStreamsResponse{
 		Items: []MediamtxListStreamsOutput{
-			{Name: "new-stream-1"},
-			{Name: "new-stream-2"},
+			{Name: "new-stream-1", Ready: true},
+			{Name: "new-stream-2", Ready: true},
 		},
 	}
 	server := serveJSON(t, response)
@@ -197,7 +242,7 @@ func TestSyncStreams_RemovesStaleDBStreams(t *testing.T) {
 	// DB has a stream that mediamtx no longer knows about.
 	response := MediamtxListStreamsResponse{
 		Items: []MediamtxListStreamsOutput{
-			{Name: "live-stream"},
+			{Name: "live-stream", Ready: true},
 		},
 	}
 	server := serveJSON(t, response)
@@ -246,7 +291,7 @@ func TestSyncStreams_RemovesStaleDBStreams(t *testing.T) {
 func TestSyncStreams_NoChanges(t *testing.T) {
 	response := MediamtxListStreamsResponse{
 		Items: []MediamtxListStreamsOutput{
-			{Name: "existing"},
+			{Name: "existing", Ready: true},
 		},
 	}
 	server := serveJSON(t, response)
@@ -281,8 +326,32 @@ func TestSyncStreams_MediamtxDown(t *testing.T) {
 	if clientErr == nil {
 		t.Fatal("expected ClientError when mediamtx is unreachable")
 	}
-	if clientErr.Message != "Error pulling MediaMTX Proxy Streams" {
-		t.Errorf("unexpected error message: %s", clientErr.Message)
+	// The message has to name the address that failed, because the usual cause
+	// is mediamtx.yml and .env disagreeing about the API port rather than the
+	// service being down.
+	if !strings.Contains(clientErr.Message, "Cannot reach the MediaMTX API at") {
+		t.Errorf("expected the address in the message, got: %s", clientErr.Message)
+	}
+	if !strings.Contains(clientErr.Message, client.cfg.MediaMtxApiAddress) {
+		t.Errorf("expected %q in the message, got: %s", client.cfg.MediaMtxApiAddress, clientErr.Message)
+	}
+}
+
+// A wrong port that answers HTTP with something else must not surface as a JSON
+// parse error, which reads like a malformed MediaMTX response.
+func TestGetStreams_NonOKStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "nope", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client, _, _ := newTestClient(t, server.URL)
+	_, err := client.GetStreams()
+	if err == nil {
+		t.Fatal("expected an error for a 404 response")
+	}
+	if !strings.Contains(err.Error(), "unexpected HTTP 404") {
+		t.Errorf("expected the status in the error, got: %v", err)
 	}
 }
 

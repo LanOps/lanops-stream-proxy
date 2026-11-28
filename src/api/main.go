@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"runtime"
 	"time"
 
 	"lanops/obs-proxy-bridge/internal/config"
@@ -12,8 +13,8 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"github.com/rs/zerolog"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -26,12 +27,14 @@ var (
 func init() {
 	var err error
 	logger = zerolog.New(
-		zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339},
+		zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339, NoColor: runtime.GOOS == "windows"},
 	).Level(zerolog.TraceLevel).With().Timestamp().Caller().Logger()
 	logger.Info().Msg("Loading API")
 
 	cfg = config.Load()
-	db, err := gorm.Open(sqlite.Open(cfg.DbPath), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(cfg.DbPath), &gorm.Config{
+		Logger: dbstreams.NewQuietLogger(),
+	})
 	if err != nil {
 		logger.Fatal().Err(err).Msg("Failed Connecting to DB")
 	}
@@ -44,7 +47,7 @@ func init() {
 // TODO - new me up and pass in the logger and db client
 // func Run(client) {
 func Run() {
-	gin.DefaultWriter = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+	gin.DefaultWriter = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339, NoColor: runtime.GOOS == "windows"}
 	r := gin.Default()
 	r.Use(func(c *gin.Context) {
 		start := time.Now()

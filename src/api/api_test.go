@@ -21,7 +21,7 @@ import (
 
 	"lanops/obs-proxy-bridge/internal/dbstreams"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 

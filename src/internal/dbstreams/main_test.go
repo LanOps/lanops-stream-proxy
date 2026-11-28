@@ -6,7 +6,7 @@ import (
 
 	"lanops/obs-proxy-bridge/internal/config"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 

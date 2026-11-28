@@ -83,6 +83,20 @@ func (client *Client) SyncStreams() *ClientError {
 			}
 		}
 
+		// Already in OBS. The media source URL is fixed when the input is
+		// created, so if MEDIAMTX_RTMP_ADDRESS has changed since then the
+		// source keeps pointing at the old address and shows nothing. Rewrite
+		// it rather than leaving the operator to find and delete sources by
+		// hand.
+		if dbStreamExistsInObs && dbStream.Enabled && dbStream.ObsStreamUuid != "" {
+			if err := client.ensureStreamMediaSourceURL(dbStream); err != nil {
+				return &ClientError{
+					Err:     err,
+					Message: "Error updating Media Source URL (Stream) in OBS",
+				}
+			}
+		}
+
 		// Check if stream exists in OBS. If not, add it.
 		if !dbStreamExistsInObs && dbStream.Enabled {
 			client.msgCh <- channels.MsgCh{Err: nil, Message: fmt.Sprintf("Adding stream %s to OBS", dbStream.Name), Level: "INFO"}

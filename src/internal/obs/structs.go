@@ -2,6 +2,7 @@ package obs
 
 import (
 	"sync"
+	"time"
 
 	"lanops/obs-proxy-bridge/internal/channels"
 	"lanops/obs-proxy-bridge/internal/config"
@@ -20,10 +21,18 @@ type Client struct {
 	mu   sync.Mutex
 	conn *goobs.Client
 
+	// textKind is resolved once from OBS rather than hardcoded, because the
+	// available text source plugin differs between OBS builds.
+	textKind string
+
 	obsStreams struct {
 		current  *dbstreams.Stream
 		previous *dbstreams.Stream
 	}
+	// visibleSince is when the current stream was last put on screen, so the
+	// rotation can hold it for its full turn but drop it early if its
+	// publisher disappears.
+	visibleSince time.Time
 }
 
 type ClientError struct {
