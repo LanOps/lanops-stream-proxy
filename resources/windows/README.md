@@ -172,6 +172,56 @@ Invoke-RestMethod -Uri http://127.0.0.1:8080/streams/cam1/enable -Method Post -C
   -ContentType 'application/json' -Body '{"enabled":false}'
 ```
 
+### If you cannot reach it from another machine
+
+Work from the proxy machine outwards, so you know which part is broken.
+
+**1. On the proxy machine:**
+
+```
+curl -u admin:PASSWORD http://127.0.0.1:8080/streams
+```
+
+If that answers, the proxy is listening and the credentials are right. If it
+does not, the problem is here, not the network: check the proxy window for a
+startup error, and that `API_PORT` matches the port you used.
+
+**2. Still on the proxy machine, confirm it is listening on every interface and
+not just loopback:**
+
+```
+netstat -ano | findstr :8080
+```
+
+The line should read `0.0.0.0:8080`, not `127.0.0.1:8080`.
+
+**3. From the other machine:**
+
+```powershell
+Test-NetConnection <proxy-machine-lan-ip> -Port 8080
+```
+
+`TcpTestSucceeded : False` means something between the two is dropping it. In
+order of likelihood:
+
+- **Windows Firewall** on the proxy machine. Allow it from an admin prompt:
+
+  ```
+  netsh advfirewall firewall add rule name="lanops stream proxy" dir=in action=allow protocol=TCP localport=8080
+  ```
+
+- **Network profile.** If the firewall prompt was cancelled once, or the LAN is
+  detected as a Public network where the app's rules do not apply, the port
+  stays closed. Settings > Network & Internet > Ethernet/Wi-Fi > Network
+  profile, set it to Private, or add the rule above.
+- **AP or client isolation.** Many LAN-party switches and venue access points
+  block wireless clients from talking to each other. Test from a wired port
+  before believing anything else.
+
+`TcpTestSucceeded : True` but the request still fails means the network is fine
+and it is auth: check you are using `API_ADMIN_USERNAME` and `API_ADMIN_PASSWORD`
+from `.env`, not the OBS or MediaMTX password.
+
 ### This is not how viewers watch
 
 The proxy does not serve video. It only drives OBS. Viewers watch whatever OBS outputs, to Twitch, YouTube or a file. MediaMTX on this machine is configured with RTMP and the API only, so there is no viewer page or stream here either.
