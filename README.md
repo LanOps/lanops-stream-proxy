@@ -25,7 +25,13 @@ cp .env.example .env   # then fill it in
 docker compose up -d
 ```
 
-Both containers use host networking, so the proxy reaches OBS on `127.0.0.1:4455` and MediaMTX on `127.0.0.1:9997` without any port mapping. If OBS runs on a different machine, set `MEDIAMTX_RTMP_ADDRESS` to an address that machine can reach, otherwise OBS will fail to open the media sources.
+Both containers use host networking, so the proxy reaches OBS on `127.0.0.1:4455` and MediaMTX on `127.0.0.1:9997` without any port mapping.
+
+**The image on Docker Hub is not being updated.** CI builds it to check the Dockerfile but does not push, so `lanopsdev/lanops-stream-proxy:latest` predates recent work. Build it locally for current code:
+
+```bash
+docker build -f resources/docker/Dockerfile -t lanopsdev/lanops-stream-proxy:latest .
+``` If OBS runs on a different machine, set `MEDIAMTX_RTMP_ADDRESS` to an address that machine can reach, otherwise OBS will fail to open the media sources.
 
 `./data` next to the compose file holds the SQLite database, so the stream list survives container restarts.
 

@@ -22,9 +22,8 @@ MediaMTX version that was packaged with it.
 Everything runs on GitHub Actions. There is no Drone pipeline.
 
 **`ci.yml`** — Linux: `golangci-lint` at the version the repo has always used,
-`go test -race ./...`, and the Docker image. The image is built on pull requests
-for validation and pushed only from `main` and tags, tagged `latest` on `main`
-and semver on tags.
+`go test -race ./...`, and a Docker image build. The image is built to prove the
+Dockerfile still works and is **not pushed**; Docker Hub publishing is off.
 
 **`windows.yml`** — Windows and the release, because only a Windows runner can
 execute the binary:
@@ -53,13 +52,13 @@ publish.
 
 ## Required settings
 
-No secret is needed for linting, testing, the Windows build or the draft
-release: the release uses the workflow's own `GITHUB_TOKEN` with
-`contents: write`.
+No secrets are needed. The draft release uses the workflow's own `GITHUB_TOKEN`
+with `contents: write`, and nothing publishes to Docker Hub.
 
-The Docker image push needs repository secrets `DOCKERHUB_USERNAME` and
-`DOCKERHUB_TOKEN`. Until they exist the image job builds the image, skips the
-push and shows a warning, so the rest of the pipeline stays green.
+The old Drone secrets (`dockerhub_username`, `dockerhub_token`,
+`discord_webhook_url`) are no longer referenced, and neither are
+`DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN`. If image publishing comes back, add
+those two and a push step to the `image` job in `ci.yml`.
 
 ## Building and releasing by hand
 

@@ -1,7 +1,8 @@
 name: ci
 
-# Everything Drone used to do, on GitHub's runners: lint, the Linux test run
-# and the Docker image. Windows and the release live in windows.yml.
+# What Drone used to do, on GitHub's runners: lint, the Linux test run and a
+# Docker image build. Windows and the release live in windows.yml. Nothing is
+# published to Docker Hub.
 
 on:
   push:
@@ -62,7 +63,7 @@ jobs:
         run: go test -race ./...
 
   image:
-    name: Docker image
+    name: Docker image builds
     runs-on: ubuntu-latest
     needs:
       - lint
@@ -70,46 +71,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The image is only pushed when Docker Hub credentials exist, so the
-      # pipeline is green before they are added rather than red for want of a
-      # secret. The step warns instead of failing.
-      - name: Check for Docker Hub credentials
-        id: creds
-        env:
-          USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-        run: |
-          if [ -n "${USERNAME}" ]; then
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ok=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN are not set, so the image was built but not pushed"
-          fi
-
       - uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
-        if: steps.creds.outputs.ok == 'true'
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Work out the tags
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: lanopsdev/lanops-stream-proxy
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push
+      # Build only. The image is not published to Docker Hub, so there is no
+      # login and no push; this exists so the Dockerfile cannot rot unnoticed.
+      - name: Build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: resources/docker/Dockerfile
-          # Build on pull requests for validation, push only on main and tags.
-          push: ${{ github.event_name != 'pull_request' && steps.creds.outputs.ok == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: lanops-stream-proxy:ci
+          push: false
