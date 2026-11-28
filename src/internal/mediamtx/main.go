@@ -8,6 +8,17 @@ import (
 	"lanops/obs-proxy-bridge/internal/config"
 	"lanops/obs-proxy-bridge/internal/dbstreams"
 	"net/http"
+	"time"
+)
+
+const (
+	// streamRetention is how long a stream that has stopped stays in the
+	// database. Long enough that an encoder reconnecting is still the same
+	// stream, with its enabled flag, its rotation position and its OBS
+	// sources intact. Short enough that finished sessions tidy themselves up.
+	streamRetention = 10 * time.Minute
+	// lastSeenRefresh avoids rewriting last_seen on every sync tick.
+	lastSeenRefresh = 60 * time.Second
 )
 
 func New(cfg config.Config, dbStreamsClient *dbstreams.Client, msgCh chan<- channels.MsgCh) (*Client, error) {
@@ -43,37 +54,19 @@ func (client *Client) SyncStreams() *ClientError {
 		}
 	}
 
-	// Sync Streams
-	// Remove DB Streams that do NOT exist in Proxy Streams
+	// A stream MediaMTX lists now is either new or coming back. Either way its
+	// row keeps its identity, so the enabled flag, the rotation position and
+	// the OBS sources survive a reconnecting encoder.
+	byName := make(map[string]dbstreams.Stream, len(dbStreamsList))
 	for _, dbStream := range dbStreamsList {
-		// check if dbStream exists in proxyStreams. If not, delete
-		deleteStream := true
-		for _, proxyStream := range proxyStreamsList {
-			if dbStream.Name == proxyStream.Name {
-				deleteStream = false
-			}
-		}
-		if deleteStream {
-			if err := client.db.DeleteStream(dbStream.Name); err != nil {
-				return &ClientError{
-					Err:     err,
-					Message: "Error removing DB Stream",
-				}
-			}
-			client.msgCh <- channels.MsgCh{Err: nil, Message: fmt.Sprintf("Removed Stream %s", dbStream.Name), Level: "INFO"}
-		}
+		byName[dbStream.Name] = dbStream
 	}
-
-	// Now we have a 'clean' DB of only existing streams, add any extra streams from the Proxy
+	live := make(map[string]bool, len(proxyStreamsList))
 	for _, proxyStream := range proxyStreamsList {
-		dbStreamExists, err := client.db.CheckStreamExistsByName(proxyStream.Name)
-		if err != nil {
-			return &ClientError{
-				Err:     err,
-				Message: "Error checking DB Stream",
-			}
-		}
-		if !dbStreamExists {
+		live[proxyStream.Name] = true
+
+		existing, known := byName[proxyStream.Name]
+		if !known {
 			if _, err := client.db.CreateStream(proxyStream.Name); err != nil {
 				return &ClientError{
 					Err:     err,
@@ -81,6 +74,44 @@ func (client *Client) SyncStreams() *ClientError {
 				}
 			}
 			client.msgCh <- channels.MsgCh{Err: nil, Message: fmt.Sprintf("Stream Found! Adding %s to the DB", proxyStream.Name), Level: "INFO"}
+			continue
+		}
+		if !existing.Live {
+			client.msgCh <- channels.MsgCh{Err: nil, Message: fmt.Sprintf("Stream %s is live again", proxyStream.Name), Level: "INFO"}
+		}
+		if !existing.Live || time.Since(existing.LastSeen) > lastSeenRefresh {
+			if err := client.db.MarkStreamLive(proxyStream.Name); err != nil {
+				return &ClientError{
+					Err:     err,
+					Message: "Error marking DB Stream live",
+				}
+			}
+		}
+	}
+
+	// Anything the database still thinks is live but MediaMTX no longer lists
+	// has stopped. Mark it offline rather than deleting it: the row, its
+	// enabled flag and its OBS sources stay, which is what stops a flapping
+	// stream from being torn down and rebuilt on every reconnect.
+	for _, dbStream := range dbStreamsList {
+		if !dbStream.Live || live[dbStream.Name] {
+			continue
+		}
+		if err := client.db.MarkStreamOffline(dbStream.Name); err != nil {
+			return &ClientError{
+				Err:     err,
+				Message: "Error marking DB Stream offline",
+			}
+		}
+		client.msgCh <- channels.MsgCh{Err: nil, Message: fmt.Sprintf("Stream %s stopped, holding it for %s", dbStream.Name, streamRetention), Level: "INFO"}
+	}
+
+	// Rows offline for longer than the retention are a finished session. Drop
+	// them, which is also what lets obs.SyncStreams remove their sources.
+	if err := client.db.PruneOfflineStreams(time.Now().Add(-streamRetention)); err != nil {
+		return &ClientError{
+			Err:     err,
+			Message: "Error pruning offline DB Streams",
 		}
 	}
 	return nil
