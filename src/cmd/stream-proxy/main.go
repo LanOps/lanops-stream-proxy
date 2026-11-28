@@ -8,6 +8,7 @@ import (
 	"lanops/obs-proxy-bridge/internal/mediamtx"
 	"lanops/obs-proxy-bridge/internal/obs"
 
+	"fmt"
 	"os"
 	"runtime"
 	"time"
@@ -30,6 +31,10 @@ const (
 	obsRetryInterval = 5 * time.Second
 )
 
+// version is stamped at build time with -X main.version, so a build in the
+// field can be identified from its log or from `stream-proxy.exe --version`.
+var version = "dev"
+
 var (
 	logger          zerolog.Logger
 	cfg             config.Config
@@ -44,7 +49,8 @@ func main() {
 		// cmd.exe does not interpret the ANSI escapes ConsoleWriter emits.
 		zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339, NoColor: runtime.GOOS == "windows"},
 	).Level(zerolog.TraceLevel).With().Timestamp().Caller().Logger()
-	logger.Info().Msg("Initializing Stream Proxy")
+	fmt.Printf("LanOps stream proxy %s\n", version)
+	logger.Info().Str("version", version).Msg("Initializing Stream Proxy")
 
 	// Start draining the message channel before anything can write to it.
 	go func() {
