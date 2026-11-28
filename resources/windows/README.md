@@ -289,6 +289,45 @@ OBS still has to be running for anything to happen. Start OBS first, or let the 
 | `no supported text source found in OBS` | OBS has neither text source plugin. A stock OBS install has both |
 | Exits immediately | A required value is missing from `.env`. The log names it |
 | Exits at startup with a database error | The folder is not writable. Move it out of `Program Files` |
+| MediaMTX exits with `bind: An attempt was made to access a socket in a way forbidden by its access permissions` | Windows has reserved the port. Not a permissions problem with the file, and not something unblocking the exe fixes. See below |
+
+### MediaMTX cannot open its port
+
+Windows reserves blocks of TCP ports for Hyper-V, WSL and Docker. If 1935 falls
+inside one of those blocks, nothing can listen on it and MediaMTX exits at
+startup. The message Windows gives is misleading: it reads like a file
+permission problem, but changing the file's permissions does nothing.
+
+Check what holds the port, and what is reserved around it, in an admin Command
+Prompt:
+
+```
+netstat -ano | findstr :1935
+netsh int ipv4 show excludedportrange protocol=tcp
+```
+
+If `netstat` shows a PID, something is already using 1935. If the second command
+shows a range covering 1935, Windows reserved it. Either reserve the port for
+MediaMTX yourself, which needs an admin prompt:
+
+```
+net stop winnat
+netsh int ipv4 add excludedportrange protocol=tcp startport=1935 numberofports=1
+net start winnat
+```
+
+or move MediaMTX off the contested port. Three places have to agree:
+
+```
+mediamtx.yml        rtmpAddress: :1936
+.env                MEDIAMTX_RTMP_ADDRESS=127.0.0.1:1936
+the streamers        rtmp://<this-machine>:1936/<key>
+```
+
+The Windows Firewall rule follows the port, so it will ask again for 1936. The
+API port can be moved the same way with `apiAddress` and
+`MEDIAMTX_API_ADDRESS`, though 9997 is only bound to 127.0.0.1 and rarely
+contested.
 
 ## Building the bundle yourself
 
