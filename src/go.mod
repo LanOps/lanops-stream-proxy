@@ -6,6 +6,7 @@ require (
 	github.com/andreykaipov/goobs v1.5.6
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.10.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
 	github.com/rs/zerolog v1.34.0
 	gorm.io/driver/sqlite v1.6.0
@@ -23,7 +24,6 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.26.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hashicorp/logutils v1.0.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect

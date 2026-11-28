@@ -11,23 +11,36 @@ https://github.com/andreykaipov/goobs
 
 ## Prerequisites
 
-- Mediamtx must be running with the API enabled (docker compose available in ```resources/docker/compose```)
-- OBS must be running
-- ```cp src/.env.example src/.env``` and fill it in
+- OBS running with the WebSocket server enabled (Tools > WebSocket Server Settings)
+- MediaMTX running with the API enabled (docker compose available in `resources/docker/compose`)
+- Either Docker, or Go 1.23 to build it yourself
 
-### Install Dependencies
+## Running with Docker Compose
+
+The compose file in `resources/docker/compose` starts MediaMTX and the stream proxy together:
 
 ```bash
+cd resources/docker/compose
+cp .env.example .env   # then fill it in
+docker compose up -d
+```
+
+Both containers use host networking, so the proxy reaches OBS on `127.0.0.1:4455` and MediaMTX on `127.0.0.1:9997` without any port mapping. If OBS runs on a different machine, set `MEDIAMTX_RTMP_ADDRESS` to an address that machine can reach, otherwise OBS will fail to open the media sources.
+
+`./data` next to the compose file holds the SQLite database, so the stream list survives container restarts.
+
+The proxy waits for OBS to appear instead of exiting, and reconnects if OBS restarts. It is safe to start the stack before OBS is open.
+
+## Running locally
+
+```bash
+cp src/.env.example src/.env   # fill in the same values as above
 cd src
 go mod tidy
-```
-
-## Usage
-
-Entry Point:
-```bash
 go run ./cmd/stream-proxy
 ```
+
+The `.env` is read from the current working directory, so run it from `src`.
 
 ## API Endpoints
 
@@ -36,6 +49,8 @@ go run ./cmd/stream-proxy
 | `/streams`              | GET    | None       | None                  | Retrieves a list of all available streams. |
 | `/streams/:name`        | GET    | `name`     | None                  | Retrieves details for a specific stream.   |
 | `/streams/:name/enable` | POST   | `name`     | `{ "enabled": bool }` | Enables/Disables the specified stream.     |
+
+All endpoints use HTTP basic auth with `API_ADMIN_USERNAME` / `API_ADMIN_PASSWORD`.
 
 ## Env
 
@@ -51,52 +66,38 @@ go run ./cmd/stream-proxy
 | `API_ADMIN_PASSWORD`     | Password to access the API.               |
 | `API_PORT`               | Port to expose the API.                   |
 
+Every variable is required and the process exits at startup if one is missing.
+
 ## Docker
 
-```docker build -f resources/docker/Dockerfile .```
-
+```bash
+docker build -f resources/docker/Dockerfile -t lanops-stream-proxy .
 ```
+
+```bash
 docker run -d \
-  --name jukebox-service \
+  --name stream-proxy \
   --restart unless-stopped \
-  -e DB_PATH=bridge.db \
-  -e OBS_WEBSOCKET_ADDRESS= \
+  --network host \
+  -e DB_PATH=/data/bridge.db \
+  -e OBS_WEBSOCKET_ADDRESS=127.0.0.1:4455 \
   -e OBS_WEBSOCKET_PASSWORD= \
   -e OBS_PROXY_SCENE_NAME="Proxy Scenes" \
-  -e MEDIAMTX_API_ADDRESS= \
-  -e MEDIAMTX_RTMP_ADDRESS= \
-  -e API_ADMIN_USERNAME= \
-  -e API_ADMIN_PASSWORD= \
+  -e MEDIAMTX_API_ADDRESS=127.0.0.1:9997 \
+  -e MEDIAMTX_RTMP_ADDRESS=127.0.0.1:1935 \
+  -e API_ADMIN_USERNAME=admin \
+  -e API_ADMIN_PASSWORD=changeme \
   -e API_PORT=8080 \
-  -p 8080:8080 \
-  lanopsdev/lanops-spotify-jukebox:service-latest
+  -v "$(pwd)/data:/data" \
+  lanopsdev/lanops-stream-proxy:latest
 ```
 
-```
-  stream-proxy:
-    image: lanopsdev/lanops-stream-proxy:latest
-    container_name: stream-proxy
-    restart: unless-stopped
-    environment:
-      DB_PATH: "bridge.db"
-      OBS_WEBSOCKET_ADDRESS: 
-      OBS_WEBSOCKET_PASSWORD: 
-      OBS_PROXY_SCENE_NAME: "Proxy Scenes"
-      MEDIAMTX_API_ADDRESS: 
-      MEDIAMTX_RTMP_ADDRESS: 
-      API_ADMIN_USERNAME:
-      API_ADMIN_PASSWORD:
-      API_PORT: 8080
-    ports:
-      - 8080:8080
-```
+`--network host` is required for the default `127.0.0.1` addresses to resolve to the host rather than the container.
 
 ## RTMP Stream Generator
 
-In the ```resources/tools``` dir there is a go script to generate RTMP streams. 
+In the `resources/tools` dir there is a go script to generate RTMP streams. It needs `ffmpeg` on the PATH.
 
-```
+```bash
 go run resources/tools/rtmpStreamGenerator.go
 ```
-
-test

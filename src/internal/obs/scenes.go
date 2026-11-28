@@ -1,15 +1,22 @@
 package obs
 
 import (
+	"github.com/andreykaipov/goobs"
 	"github.com/andreykaipov/goobs/api/typedefs"
 )
 
 func (client *Client) getScenes() ([]*typedefs.Scene, error) {
 	var scenes []*typedefs.Scene
-	items, err := client.obs.Scenes.GetSceneList()
+	err := client.withObs(func(obs *goobs.Client) error {
+		items, err := obs.Scenes.GetSceneList()
+		if err != nil {
+			return err
+		}
+		scenes = items.Scenes
+		return nil
+	})
 	if err != nil {
-		return scenes, err
+		return nil, err
 	}
-	scenes = items.Scenes
 	return scenes, nil
 }
